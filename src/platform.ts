@@ -58,6 +58,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       switcher: platformConfig.switcher?.deviceId ? {
         deviceId: platformConfig.switcher.deviceId,
         deviceIp: platformConfig.switcher.deviceIp,
+        token: platformConfig.switcher.token,
       } : undefined,
       usage: platformConfig.usage || [
         { time: '06:00', label: 'Morning wash', liters: 30, temp: 38 },

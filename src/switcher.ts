@@ -32,9 +32,13 @@ function discoverDevice(config: SwitcherConfig, log: Logger): Promise<any> {
 
     proxy.on('ready', (device: any) => {
       clearTimeout(timeout);
+      // Pass token for newer models (S11, S12, lights) that require it
+      if (config.token && device.token === undefined) {
+        device.token = config.token;
+      }
       cachedDevice = device;
       cachedDeviceId = config.deviceId;
-      log.info(`SWITCHER: discovered device ${config.deviceId} at ${config.deviceIp}`);
+      log.info(`SWITCHER: discovered device ${config.deviceId}`);
       resolve(device);
     });
 

@@ -114,6 +114,11 @@
             "title": "Device IP (optional)",
             "type": "string",
             "description": "Optional — device is auto-discovered on your network. Set only if discovery fails."
+          },
+          "token": {
+            "title": "Token (optional)",
+            "type": "string",
+            "description": "Only if needed — get it from https://switcher.co.il/GetKey/"
           }
         }
       },

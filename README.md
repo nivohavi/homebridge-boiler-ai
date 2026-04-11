@@ -139,7 +139,7 @@ Replace the IP address with your plug's actual IP.
 
 **Switcher (Israeli boiler plug) — native support, no extra plugins:**
 
-Switcher is supported natively — the plugin discovers and controls the device directly on your local network. No HTTP URLs needed, no extra plugins. Just add the `switcher` section instead of `boilerPlug`:
+Switcher uses a proprietary local protocol (not HTTP), so it has its own `switcher` config section instead of `boilerPlug`. The plugin discovers and controls the device directly on your local network — no extra plugins needed.
 
 ```json
 {
@@ -153,6 +153,19 @@ The device is auto-discovered on your network via UDP. To find your device ID:
 - Check the [homebridge-switcher-platform](https://github.com/nitaybz/homebridge-switcher-platform) logs if you have it installed
 - Or use the [Switcher app](https://switcher.co.il/) device settings
 - The ID is a short hex string like `ab1c2d`
+
+If your Switcher model requires a token (you'll see an auth error in the logs), get one from https://switcher.co.il/GetKey/ and add it:
+
+```json
+{
+  "switcher": {
+    "deviceId": "ab1c2d",
+    "token": "your-token-from-switcher"
+  }
+}
+```
+
+> **Note:** Use either `switcher` or `boilerPlug` — not both. Switcher uses its own local protocol; all other plugs use HTTP URLs via `boilerPlug`.
 
 **Any plug with POST + auth:**
 ```json
@@ -185,12 +198,31 @@ The boiler appears as a switch in the Home app, but it does **not** enable/disab
 
 The automatic schedule runs regardless of the switch state. You never need to touch it — it's there for manual overrides only (e.g. unexpected guests, want hot water sooner).
 
-## AI Providers
+## AI Setup
 
-| Provider | Model | Notes |
-|----------|-------|-------|
+The plugin needs an API key from at least one AI provider. You need **one** of these — not both.
+
+### Google Gemini (recommended — free tier)
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the key and paste it into the `Gemini API Key` field in the plugin settings
+
+The free tier includes enough requests for this plugin (a few calls per day).
+
+### xAI Grok (alternative)
+
+1. Go to [xAI Console](https://console.x.ai/)
+2. Create an account and generate an API key
+3. Copy the key and paste it into the `xAI (Grok) API Key` field
+
+If both keys are set, Grok is used (faster responses). If only one is set, that one is used.
+
+| Provider | Model | Cost |
+|----------|-------|------|
 | Google Gemini | gemini-2.5-flash-lite | Free tier available |
-| xAI Grok | grok-3-mini-fast | Preferred when both keys set |
+| xAI Grok | grok-3-mini-fast | Paid, but faster |
 
 ## Safety
 

@@ -24,7 +24,8 @@ export interface TankConfig {
 
 export interface SwitcherConfig {
   deviceId: string;
-  deviceIp?: string;  // optional — auto-discovered
+  deviceIp?: string;   // optional — auto-discovered
+  token?: string;      // required for newer models (S11, S12, lights)
 }
 
 export interface BoilerAIConfig {
