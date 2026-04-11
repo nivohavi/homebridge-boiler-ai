@@ -127,6 +127,17 @@ Replace the IP address with your plug's actual IP.
 }
 ```
 
+**Switcher (Israeli smart plug, via homebridge-switcher-platform + homebridge-http-webhooks):**
+
+The Switcher doesn't have a direct HTTP API. Instead, use [homebridge-switcher-platform](https://github.com/nicknisi/homebridge-switcher-platform) to expose it to HomeKit, then [homebridge-http-webhooks](https://github.com/benzman81/homebridge-http-webhooks) to create an HTTP-controllable switch. Create a HomeKit automation that syncs the webhook switch to the Switcher.
+
+```json
+{
+  "onUrl": "http://localhost:51828/?accessoryId=boiler&state=true",
+  "offUrl": "http://localhost:51828/?accessoryId=boiler&state=false"
+}
+```
+
 **Any plug with POST + auth:**
 ```json
 {
