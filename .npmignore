@@ -1,5 +1,7 @@
 src/
+tests/
 .claude/
 .github/
 tsconfig.json
+vitest.config.ts
 conversation-context.md
