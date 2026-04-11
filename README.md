@@ -80,17 +80,26 @@ Configure through the Homebridge UI (Settings → Boiler AI) or add to `config.j
 | `maxDurationMinutes` | `90` | Safety cap per cycle |
 | `aiTemperature` | `0.3` | AI creativity (lower = conservative) |
 
-### Home Assistant smart plug example
+### Smart plug examples
 
+**Shelly:**
+```json
+{ "onUrl": "http://shelly-ip/relay/0?turn=on", "offUrl": "http://shelly-ip/relay/0?turn=off" }
+```
+
+**Tasmota:**
+```json
+{ "onUrl": "http://tasmota-ip/cm?cmnd=Power%20On", "offUrl": "http://tasmota-ip/cm?cmnd=Power%20Off" }
+```
+
+**Any plug with POST + auth** (e.g. behind a gateway):
 ```json
 {
-  "boilerPlug": {
-    "onUrl": "http://homeassistant:8123/api/services/switch/turn_on",
-    "offUrl": "http://homeassistant:8123/api/services/switch/turn_off",
-    "method": "POST",
-    "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\", \"Content-Type\": \"application/json\"}",
-    "body": "{\"entity_id\": \"switch.boiler\"}"
-  }
+  "onUrl": "http://gateway/api/switch/on",
+  "offUrl": "http://gateway/api/switch/off",
+  "method": "POST",
+  "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\", \"Content-Type\": \"application/json\"}",
+  "body": "{\"device\": \"boiler\"}"
 }
 ```
 
