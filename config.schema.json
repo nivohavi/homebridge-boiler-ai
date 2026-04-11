@@ -1,0 +1,159 @@
+{
+  "pluginAlias": "BoilerAI",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "AI-powered solar hot water tank controller. Uses Gemini or Grok to decide when to run the electric heater, optimizing for minimal electricity by leveraging solar heating.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Plugin Name",
+        "type": "string",
+        "default": "Boiler AI"
+      },
+      "location": {
+        "title": "Location",
+        "type": "string",
+        "description": "City name for weather (test with: curl wttr.in/YourCity)",
+        "placeholder": "Tel Aviv",
+        "required": true
+      },
+      "timezone": {
+        "title": "Timezone",
+        "type": "string",
+        "description": "IANA timezone (find yours: timedatectl | grep 'Time zone')",
+        "placeholder": "Asia/Jerusalem",
+        "required": true
+      },
+      "geminiApiKey": {
+        "title": "Gemini API Key",
+        "type": "string",
+        "description": "Google Gemini API key (free tier available at aistudio.google.com)"
+      },
+      "xaiApiKey": {
+        "title": "xAI (Grok) API Key",
+        "type": "string",
+        "description": "Optional. If set, Grok is preferred over Gemini"
+      },
+      "tank": {
+        "title": "Tank",
+        "type": "object",
+        "properties": {
+          "liters": {
+            "title": "Capacity (liters)",
+            "type": "integer",
+            "default": 120,
+            "minimum": 20,
+            "maximum": 500,
+            "required": true
+          },
+          "heaterKw": {
+            "title": "Heater Power (kW)",
+            "type": "number",
+            "default": 2.5,
+            "minimum": 0.5,
+            "maximum": 10,
+            "required": true
+          },
+          "solar": {
+            "title": "Has Solar Collector",
+            "type": "boolean",
+            "default": true,
+            "description": "Disable for electric-only tanks"
+          }
+        }
+      },
+      "boilerPlug": {
+        "title": "Boiler Smart Plug",
+        "type": "object",
+        "properties": {
+          "onUrl": {
+            "title": "ON URL",
+            "type": "string",
+            "description": "HTTP URL to turn boiler on",
+            "required": true
+          },
+          "offUrl": {
+            "title": "OFF URL",
+            "type": "string",
+            "description": "HTTP URL to turn boiler off",
+            "required": true
+          },
+          "method": {
+            "title": "HTTP Method",
+            "type": "string",
+            "default": "GET",
+            "oneOf": [
+              { "title": "GET", "enum": ["GET"] },
+              { "title": "POST", "enum": ["POST"] }
+            ]
+          },
+          "headers": {
+            "title": "HTTP Headers (JSON)",
+            "type": "string",
+            "description": "Optional JSON object, e.g. {\"Authorization\": \"Bearer token\"}"
+          },
+          "body": {
+            "title": "Request Body",
+            "type": "string",
+            "description": "Optional body for POST requests"
+          }
+        }
+      },
+      "usage": {
+        "title": "Hot Water Usage",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "title": "Time (HH:MM)",
+              "type": "string",
+              "pattern": "^\\d{2}:\\d{2}$",
+              "required": true
+            },
+            "label": {
+              "title": "Label",
+              "type": "string",
+              "required": true
+            },
+            "liters": {
+              "title": "Liters",
+              "type": "integer",
+              "minimum": 5,
+              "required": true
+            },
+            "temp": {
+              "title": "Temperature (°C)",
+              "type": "number",
+              "minimum": 30,
+              "maximum": 65,
+              "required": true
+            }
+          }
+        },
+        "default": [
+          { "time": "06:00", "label": "Morning wash", "liters": 30, "temp": 38 },
+          { "time": "18:30", "label": "Kid bath", "liters": 50, "temp": 45 },
+          { "time": "22:00", "label": "Showers", "liters": 120, "temp": 50 }
+        ]
+      },
+      "maxDurationMinutes": {
+        "title": "Max Heating Duration (minutes)",
+        "type": "integer",
+        "default": 90,
+        "minimum": 10,
+        "maximum": 120,
+        "description": "Safety cap per heating cycle"
+      },
+      "aiTemperature": {
+        "title": "AI Temperature",
+        "type": "number",
+        "default": 0.3,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Lower = more conservative decisions"
+      }
+    }
+  }
+}

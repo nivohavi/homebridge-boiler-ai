@@ -1,0 +1,31 @@
+{
+  "name": "homebridge-boiler-ai",
+  "version": "1.0.0",
+  "description": "AI-powered solar hot water tank controller for Homebridge",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "homebridge",
+    "boiler",
+    "solar",
+    "hot-water",
+    "ai"
+  ],
+  "author": "nivohavi",
+  "license": "MIT",
+  "engines": {
+    "homebridge": ">=1.8.0",
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "homebridge": "^1.8.0",
+    "typescript": "^5.0.0"
+  }
+}
