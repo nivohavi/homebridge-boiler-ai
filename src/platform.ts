@@ -6,7 +6,7 @@ import { PLATFORM_NAME, PLUGIN_NAME, BoilerAIConfig, deriveSchedule, heatingRate
 import { callAI } from './ai';
 import { fetchWeather, estimateSolarGainPerHour } from './weather';
 import { estimateTankTemp } from './tempModel';
-import { loadState, saveState, appendHistory, BoilerState, RunRecord } from './state';
+import { loadState, saveState, appendHistory } from './state';
 import { sendWebhook } from './boiler';
 import { switcherTurnOn, switcherTurnOff } from './switcher';
 import { buildPrompt, parseAIResponse } from './prompt';
@@ -55,10 +55,9 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
         headers: platformConfig.boilerPlug?.headers,
         body: platformConfig.boilerPlug?.body,
       },
-      switcher: platformConfig.switcher ? {
+      switcher: platformConfig.switcher?.deviceId ? {
         deviceId: platformConfig.switcher.deviceId,
         deviceIp: platformConfig.switcher.deviceIp,
-        deviceType: platformConfig.switcher.deviceType || 'wasserkraft',
       } : undefined,
       usage: platformConfig.usage || [
         { time: '06:00', label: 'Morning wash', liters: 30, temp: 38 },

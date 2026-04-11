@@ -2,10 +2,20 @@
 
 A [Homebridge](https://homebridge.io) plugin that uses AI (Gemini or Grok) to control a solar hot water tank's electric backup heater, optimizing for minimal electricity usage.
 
+### Supported smart plugs
+
+- [**Switcher**](#switcher-israeli-boiler-plug--native-support-no-extra-plugins) — native support, no extra plugins needed
+- [**Shelly**](#shelly-plus-plug-s-1pm-etc) — Gen1 and Gen2+ via HTTP
+- [**Tasmota**](#tasmota) — via HTTP
+- [**Sonoff eWeLink**](#sonoff-ewelink-via-lan-mode) — via LAN mode
+- [**TP-Link Kasa**](#tp-link-kasa-via-homebridge-http-webhooks-bridge) — via webhooks bridge
+- [**Any HTTP plug**](#any-plug-with-post--auth) — anything with an on/off URL
+
 ## Features
 
 - AI-powered heating decisions based on weather, solar gain, and your hot water schedule
-- Works with any HTTP-controllable smart plug (Shelly, Tasmota, Home Assistant switches, etc.)
+- Native Switcher support — just enter your device ID, no extra plugins
+- Works with any HTTP-controllable smart plug (Shelly, Tasmota, etc.)
 - Sunrise/sunset fetched automatically for your location
 - Heating rate calculated from your tank specs
 - Solar gain model disabled for electric-only tanks
@@ -129,18 +139,20 @@ Replace the IP address with your plug's actual IP.
 
 **Switcher (Israeli boiler plug) — native support, no extra plugins:**
 
-Switcher is supported natively via the `switcher` config. No HTTP URLs needed — the plugin talks directly to the Switcher on your local network. Just add the `switcher` section instead of `boilerPlug`:
+Switcher is supported natively — the plugin discovers and controls the device directly on your local network. No HTTP URLs needed, no extra plugins. Just add the `switcher` section instead of `boilerPlug`:
 
 ```json
 {
   "switcher": {
-    "deviceId": "aabbcc",
-    "deviceIp": "192.168.1.50"
+    "deviceId": "ab1c2d"
   }
 }
 ```
 
-To find your device ID and IP, check the Switcher app or use [aioswitcher](https://github.com/TomerFi/aioswitcher) discovery.
+The device is auto-discovered on your network via UDP. To find your device ID:
+- Check the [homebridge-switcher-platform](https://github.com/nitaybz/homebridge-switcher-platform) logs if you have it installed
+- Or use the [Switcher app](https://switcher.co.il/) device settings
+- The ID is a short hex string like `ab1c2d`
 
 **Any plug with POST + auth:**
 ```json

@@ -108,18 +108,12 @@
           "deviceId": {
             "title": "Device ID",
             "type": "string",
-            "description": "Switcher device ID (hex string, e.g. 'aabbcc')"
+            "description": "Switcher device ID (hex string, e.g. 'ab1c2d'). Found in Switcher app or plugin logs."
           },
           "deviceIp": {
-            "title": "Device IP",
+            "title": "Device IP (optional)",
             "type": "string",
-            "description": "Switcher device IP address on your local network"
-          },
-          "deviceType": {
-            "title": "Device Type",
-            "type": "string",
-            "default": "wasserkraft",
-            "description": "Usually 'wasserkraft' for boilers"
+            "description": "Optional — device is auto-discovered on your network. Set only if discovery fails."
           }
         }
       },

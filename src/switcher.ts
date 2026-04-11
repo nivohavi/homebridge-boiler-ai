@@ -1,71 +1,94 @@
 import { Logger } from 'homebridge';
 import { SwitcherConfig } from './settings';
 
-// switcher-js2 doesn't have TypeScript types, so we use require
 let SwitcherModule: any = null;
 try {
   SwitcherModule = require('switcher-js2');
 } catch {
-  // Will be checked at runtime when needed
+  // Checked at runtime
 }
 
-export function isSwitcherAvailable(): boolean {
-  return SwitcherModule !== null;
+// Cache the discovered device so we don't re-discover every time
+let cachedDevice: any = null;
+let cachedDeviceId: string | null = null;
+
+function discoverDevice(config: SwitcherConfig, log: Logger): Promise<any> {
+  return new Promise((resolve, reject) => {
+    // Return cached device if same ID
+    if (cachedDevice && cachedDeviceId === config.deviceId) {
+      return resolve(cachedDevice);
+    }
+
+    const timeout = setTimeout(() => {
+      reject(new Error(`Switcher device ${config.deviceId} not found on network (10s timeout). Make sure the device is on and reachable.`));
+    }, 10000);
+
+    // discover() listens for UDP broadcasts and returns a ready-to-use Switcher instance
+    const proxy = SwitcherModule.discover(
+      (msg: string) => log.debug(`SWITCHER: ${msg}`),
+      config.deviceId, // identifier to match
+      9000, // discovery timeout
+    );
+
+    proxy.on('ready', (device: any) => {
+      clearTimeout(timeout);
+      cachedDevice = device;
+      cachedDeviceId = config.deviceId;
+      log.info(`SWITCHER: discovered device ${config.deviceId} at ${config.deviceIp}`);
+      resolve(device);
+    });
+
+    proxy.on('error', (err: Error) => {
+      clearTimeout(timeout);
+      reject(new Error(`Switcher discovery error: ${err.message}`));
+    });
+  });
 }
 
 export async function switcherTurnOn(config: SwitcherConfig, minutes: number, log: Logger): Promise<void> {
   if (!SwitcherModule) {
-    throw new Error('switcher-js2 not installed — run: npm install switcher-js2');
+    throw new Error('switcher-js2 not installed');
   }
 
+  const device = await discoverDevice(config, log);
+
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Switcher turn_on timed out after 10s'));
-    }, 10000);
+    const timeout = setTimeout(() => reject(new Error('Switcher turn_on timed out')), 10000);
 
-    const switcher = new SwitcherModule(
-      config.deviceId,
-      config.deviceIp,
-      (msg: string) => log.debug(`SWITCHER: ${msg}`),
-      false, // don't listen for broadcasts
-      config.deviceType || 'wasserkraft',
-    );
-
-    switcher.turn_on(minutes);
-
-    // switcher-js2 turn_on doesn't have a callback, give it a moment
-    setTimeout(() => {
+    try {
+      device.turn_on(minutes);
+      setTimeout(() => {
+        clearTimeout(timeout);
+        log.info(`SWITCHER: turned ON for ${minutes} min`);
+        resolve();
+      }, 2000);
+    } catch (err) {
       clearTimeout(timeout);
-      log.info(`SWITCHER: turned ON for ${minutes} min`);
-      resolve();
-    }, 2000);
+      reject(err);
+    }
   });
 }
 
 export async function switcherTurnOff(config: SwitcherConfig, log: Logger): Promise<void> {
   if (!SwitcherModule) {
-    throw new Error('switcher-js2 not installed — run: npm install switcher-js2');
+    throw new Error('switcher-js2 not installed');
   }
 
+  const device = await discoverDevice(config, log);
+
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Switcher turn_off timed out after 10s'));
-    }, 10000);
+    const timeout = setTimeout(() => reject(new Error('Switcher turn_off timed out')), 10000);
 
-    const switcher = new SwitcherModule(
-      config.deviceId,
-      config.deviceIp,
-      (msg: string) => log.debug(`SWITCHER: ${msg}`),
-      false,
-      config.deviceType || 'wasserkraft',
-    );
-
-    switcher.turn_off();
-
-    setTimeout(() => {
+    try {
+      device.turn_off();
+      setTimeout(() => {
+        clearTimeout(timeout);
+        log.info('SWITCHER: turned OFF');
+        resolve();
+      }, 2000);
+    } catch (err) {
       clearTimeout(timeout);
-      log.info('SWITCHER: turned OFF');
-      resolve();
-    }, 2000);
+      reject(err);
+    }
   });
 }

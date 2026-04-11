@@ -24,8 +24,7 @@ export interface TankConfig {
 
 export interface SwitcherConfig {
   deviceId: string;
-  deviceIp: string;
-  deviceType?: string;  // default: 'wasserkraft' (boiler)
+  deviceIp?: string;  // optional — auto-discovered
 }
 
 export interface BoilerAIConfig {
