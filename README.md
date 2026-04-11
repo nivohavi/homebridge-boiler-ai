@@ -212,13 +212,6 @@ This means the AI sees the full picture — if you have showers at 22:00 and 23:
 
 After each scheduled usage time passes, the plugin conservatively assumes the water was used and lowers the temperature estimate. This prevents the "tank already hot" mistake when water was actually drawn.
 
-## Docker / Node.js 24
+## Switcher protocol
 
-If you run Homebridge in Docker with Node.js 24+, the Switcher integration requires the OpenSSL legacy provider. Add this to your `docker-compose.yml`:
-
-```yaml
-environment:
-  - NODE_OPTIONS=--openssl-legacy-provider
-```
-
-This is needed because the `switcher-js2` library uses a cipher that changed behavior in Node.js 24. HTTP-based plugs (Shelly, Tasmota) are not affected.
+The plugin includes a native Switcher client — no external dependencies needed. It communicates directly with the device via UDP discovery and TCP commands, compatible with all Node.js versions (18+). No `--openssl-legacy-provider` workaround required.
