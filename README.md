@@ -93,6 +93,8 @@ Enter your device name (as it appears in the Switcher app), IP address, or devic
 
 If you get auth errors in the logs, your model may need a token — get it from https://switcher.co.il/GetKey/ and add `"token": "your-token"`.
 
+> **Note:** If you have `homebridge-switcher-platform` installed, disable or remove it first — two plugins can't control the same Switcher device simultaneously.
+
 #### Shelly
 
 ```json
