@@ -109,7 +109,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [acc]);
   }
 
-  // Auto-detect tank specs based on location using AI
+  // Auto-detect tank specs based on timezone/location
   private async detectTankSpecs(): Promise<void> {
     // Check if we already detected and cached specs
     const state = loadState(this.storagePath);
@@ -117,44 +117,79 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       this.config.tank.liters = (state as any).detectedLiters || 120;
       this.config.tank.heaterKw = (state as any).detectedHeaterKw || 2.5;
       this.config.tank.solar = (state as any).detectedSolar !== false;
-      this.log.info(`TANK: using detected specs for ${this.config.location}: ${this.config.tank.liters}L, ${this.config.tank.heaterKw}kW, solar=${this.config.tank.solar}`);
+      this.log.info(`TANK: using cached specs: ${this.config.tank.liters}L, ${this.config.tank.heaterKw}kW, solar=${this.config.tank.solar}`);
       return;
     }
 
-    try {
-      this.log.info(`TANK: detecting standard tank specs for ${this.config.location}...`);
-      const prompt = `What is the most common residential hot water tank in ${this.config.location}? Reply with ONLY these 3 values separated by pipes, nothing else:\nLITERS|KW|SOLAR\nwhere LITERS is tank capacity, KW is electric heater power, SOLAR is true or false (whether rooftop solar water heaters are common there).\nExample: 150|3.0|false`;
+    // Regional defaults based on timezone — more reliable than AI for factual specs
+    const regionDefaults: Record<string, { liters: number; kw: number; solar: boolean }> = {
+      // Israel
+      'Asia/Jerusalem': { liters: 150, kw: 2.5, solar: true },
+      // Australia
+      'Australia/Sydney': { liters: 160, kw: 3.6, solar: true },
+      'Australia/Melbourne': { liters: 160, kw: 3.6, solar: true },
+      'Australia/Brisbane': { liters: 160, kw: 3.6, solar: true },
+      'Australia/Perth': { liters: 160, kw: 3.6, solar: true },
+      // UK / Ireland
+      'Europe/London': { liters: 150, kw: 3.0, solar: false },
+      'Europe/Dublin': { liters: 150, kw: 3.0, solar: false },
+      // Southern Europe (solar common)
+      'Europe/Athens': { liters: 150, kw: 2.0, solar: true },
+      'Europe/Istanbul': { liters: 150, kw: 2.0, solar: true },
+      'Europe/Rome': { liters: 80, kw: 1.5, solar: false },
+      'Europe/Madrid': { liters: 100, kw: 1.5, solar: true },
+      // Central / Northern Europe
+      'Europe/Berlin': { liters: 150, kw: 2.0, solar: false },
+      'Europe/Paris': { liters: 150, kw: 2.0, solar: false },
+      'Europe/Amsterdam': { liters: 120, kw: 2.0, solar: false },
+      'Europe/Stockholm': { liters: 200, kw: 3.0, solar: false },
+      // North America
+      'America/New_York': { liters: 190, kw: 4.5, solar: false },
+      'America/Chicago': { liters: 190, kw: 4.5, solar: false },
+      'America/Los_Angeles': { liters: 190, kw: 4.5, solar: false },
+      'America/Toronto': { liters: 190, kw: 4.5, solar: false },
+      // South Africa
+      'Africa/Johannesburg': { liters: 150, kw: 2.0, solar: true },
+      // India
+      'Asia/Kolkata': { liters: 25, kw: 2.0, solar: true },
+    };
 
-      const raw = await callAI(prompt, 15, this.config.xaiApiKey, this.config.geminiApiKey, 0.1);
-      const match = raw.trim().match(/(\d+)\s*\|\s*([\d.]+)\s*\|\s*(true|false)/i);
+    const specs = regionDefaults[this.config.timezone];
 
-      if (match) {
-        const liters = parseInt(match[1], 10);
-        const kw = parseFloat(match[2]);
-        const solar = match[3].toLowerCase() === 'true';
-
-        // Sanity check
-        if (liters >= 30 && liters <= 500 && kw >= 0.5 && kw <= 10) {
-          this.config.tank.liters = liters;
-          this.config.tank.heaterKw = kw;
-          this.config.tank.solar = solar;
-
-          // Cache so we don't call AI again
-          (state as any).tankSpecsDetected = true;
-          (state as any).detectedLiters = liters;
-          (state as any).detectedHeaterKw = kw;
-          (state as any).detectedSolar = solar;
-          saveState(this.storagePath, state);
-
-          this.log.info(`TANK: detected for ${this.config.location}: ${liters}L, ${kw}kW, solar=${solar}`);
-          return;
+    if (specs) {
+      this.config.tank.liters = specs.liters;
+      this.config.tank.heaterKw = specs.kw;
+      this.config.tank.solar = specs.solar;
+      this.log.info(`TANK: regional defaults for ${this.config.timezone}: ${specs.liters}L, ${specs.kw}kW, solar=${specs.solar}`);
+    } else {
+      // Unknown timezone — try AI as fallback
+      try {
+        this.log.info(`TANK: unknown region (${this.config.timezone}), asking AI...`);
+        const prompt = `What is the most common residential hot water tank in the country with timezone ${this.config.timezone}? Reply ONLY: LITERS|KW|SOLAR (e.g. 150|2.5|true). KW must be in kilowatts not watts.`;
+        const raw = await callAI(prompt, 15, this.config.xaiApiKey, this.config.geminiApiKey, 0.0);
+        const match = raw.trim().match(/(\d+)\s*\|\s*([\d.]+)\s*\|\s*(true|false)/i);
+        if (match) {
+          let kw = parseFloat(match[2]);
+          if (kw > 100) kw = kw / 1000;
+          const liters = parseInt(match[1], 10);
+          if (liters >= 30 && liters <= 500 && kw >= 0.5 && kw <= 10) {
+            this.config.tank.liters = liters;
+            this.config.tank.heaterKw = kw;
+            this.config.tank.solar = match[3].toLowerCase() === 'true';
+            this.log.info(`TANK: AI detected for ${this.config.timezone}: ${liters}L, ${kw}kW, solar=${this.config.tank.solar}`);
+          }
         }
+      } catch (err) {
+        this.log.warn(`TANK: auto-detect failed, using defaults (120L, 2.5kW): ${(err as Error).message}`);
       }
-
-      this.log.warn(`TANK: could not parse AI response, using defaults (120L, 2.5kW). Response: ${raw.slice(0, 100)}`);
-    } catch (err) {
-      this.log.warn(`TANK: auto-detect failed, using defaults (120L, 2.5kW): ${(err as Error).message}`);
     }
+
+    // Cache result
+    (state as any).tankSpecsDetected = true;
+    (state as any).detectedLiters = this.config.tank.liters;
+    (state as any).detectedHeaterKw = this.config.tank.heaterKw;
+    (state as any).detectedSolar = this.config.tank.solar;
+    saveState(this.storagePath, state);
   }
 
   // Send on/off command through the configured control method
