@@ -122,38 +122,8 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     }
 
     // Regional defaults based on timezone — more reliable than AI for factual specs
-    const regionDefaults: Record<string, { liters: number; kw: number; solar: boolean }> = {
-      // Israel
-      'Asia/Jerusalem': { liters: 150, kw: 2.5, solar: true },
-      // Australia
-      'Australia/Sydney': { liters: 160, kw: 3.6, solar: true },
-      'Australia/Melbourne': { liters: 160, kw: 3.6, solar: true },
-      'Australia/Brisbane': { liters: 160, kw: 3.6, solar: true },
-      'Australia/Perth': { liters: 160, kw: 3.6, solar: true },
-      // UK / Ireland
-      'Europe/London': { liters: 150, kw: 3.0, solar: false },
-      'Europe/Dublin': { liters: 150, kw: 3.0, solar: false },
-      // Southern Europe (solar common)
-      'Europe/Athens': { liters: 150, kw: 2.0, solar: true },
-      'Europe/Istanbul': { liters: 150, kw: 2.0, solar: true },
-      'Europe/Rome': { liters: 80, kw: 1.5, solar: false },
-      'Europe/Madrid': { liters: 100, kw: 1.5, solar: true },
-      // Central / Northern Europe
-      'Europe/Berlin': { liters: 150, kw: 2.0, solar: false },
-      'Europe/Paris': { liters: 150, kw: 2.0, solar: false },
-      'Europe/Amsterdam': { liters: 120, kw: 2.0, solar: false },
-      'Europe/Stockholm': { liters: 200, kw: 3.0, solar: false },
-      // North America
-      'America/New_York': { liters: 190, kw: 4.5, solar: false },
-      'America/Chicago': { liters: 190, kw: 4.5, solar: false },
-      'America/Los_Angeles': { liters: 190, kw: 4.5, solar: false },
-      'America/Toronto': { liters: 190, kw: 4.5, solar: false },
-      // South Africa
-      'Africa/Johannesburg': { liters: 150, kw: 2.0, solar: true },
-      // India
-      'Asia/Kolkata': { liters: 25, kw: 2.0, solar: true },
-    };
-
+    // See src/regionDefaults.json to add/update regions
+    const regionDefaults = require('./regionDefaults.json') as Record<string, { liters: number; kw: number; solar: boolean }>;
     const specs = regionDefaults[this.config.timezone];
 
     if (specs) {

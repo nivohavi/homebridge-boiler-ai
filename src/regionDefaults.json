@@ -1,0 +1,30 @@
+{
+  "Asia/Jerusalem": { "liters": 150, "kw": 2.5, "solar": true },
+
+  "Australia/Sydney": { "liters": 160, "kw": 3.6, "solar": true },
+  "Australia/Melbourne": { "liters": 160, "kw": 3.6, "solar": true },
+  "Australia/Brisbane": { "liters": 160, "kw": 3.6, "solar": true },
+  "Australia/Perth": { "liters": 160, "kw": 3.6, "solar": true },
+
+  "Europe/London": { "liters": 150, "kw": 3.0, "solar": false },
+  "Europe/Dublin": { "liters": 150, "kw": 3.0, "solar": false },
+
+  "Europe/Athens": { "liters": 150, "kw": 2.0, "solar": true },
+  "Europe/Istanbul": { "liters": 150, "kw": 2.0, "solar": true },
+  "Europe/Rome": { "liters": 80, "kw": 1.5, "solar": false },
+  "Europe/Madrid": { "liters": 100, "kw": 1.5, "solar": true },
+
+  "Europe/Berlin": { "liters": 150, "kw": 2.0, "solar": false },
+  "Europe/Paris": { "liters": 150, "kw": 2.0, "solar": false },
+  "Europe/Amsterdam": { "liters": 120, "kw": 2.0, "solar": false },
+  "Europe/Stockholm": { "liters": 200, "kw": 3.0, "solar": false },
+
+  "America/New_York": { "liters": 190, "kw": 4.5, "solar": false },
+  "America/Chicago": { "liters": 190, "kw": 4.5, "solar": false },
+  "America/Los_Angeles": { "liters": 190, "kw": 4.5, "solar": false },
+  "America/Toronto": { "liters": 190, "kw": 4.5, "solar": false },
+
+  "Africa/Johannesburg": { "liters": 150, "kw": 2.0, "solar": true },
+
+  "Asia/Kolkata": { "liters": 25, "kw": 2.0, "solar": true }
+}
