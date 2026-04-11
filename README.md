@@ -96,16 +96,23 @@ Configure through the Homebridge UI (Settings → Boiler AI) or add to `config.j
 
 ## How it works
 
-The plugin runs check cycles at scheduled times (automatically derived from your usage schedule, ~1 hour before each event). At each check:
+**The plugin is fully autonomous.** Once configured, it runs on its own — no interaction needed. At scheduled times (automatically derived from your usage, ~1 hour before each event), it:
 
 1. Fetches weather and sunrise/sunset for your location
 2. Estimates tank temperature from heating history and solar gain
 3. Asks the AI whether to heat and for how long
 4. Turns the smart plug on/off via HTTP
 
-In HomeKit, the boiler appears as a switch:
-- **ON** = triggers an AI decision cycle
-- **OFF** = emergency stop
+This happens whether you open the Home app or not. The scheduler runs in the background as long as Homebridge is running.
+
+### The HomeKit switch
+
+The boiler appears as a switch in the Home app, but it does **not** enable/disable the system. Think of it as a button, not a light switch:
+
+- **Tap ON** = manually triggers one AI decision cycle ("check now"). The AI decides whether to heat. The switch turns itself back off afterward.
+- **Tap OFF** = emergency stop. Only relevant if the boiler is actively heating mid-cycle.
+
+The automatic schedule runs regardless of the switch state. You never need to touch it — it's there for manual overrides only (e.g. unexpected guests, want hot water sooner).
 
 ## AI Providers
 
