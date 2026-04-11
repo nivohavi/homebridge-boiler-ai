@@ -1,4 +1,4 @@
-import { BoilerAIConfig, heatingRate } from './settings';
+import { BoilerAIConfig, heatingRate, usageDrop } from './settings';
 import { ParsedWeather } from './weather';
 import { BoilerState, lastRun } from './state';
 
@@ -78,21 +78,37 @@ export function buildPrompt(
     lines.push(`- ${goal.time} ${goal.label} (needs ~${Math.round(goal.temp)}°C, ~${goal.liters}L)${status}`);
   }
 
-  // Heating estimates
+  // Heating estimates — cascade through usage events with standby loss and usage drops
   lines.push('');
-  lines.push('=== HEATING ESTIMATES ===');
+  lines.push('=== HEATING ESTIMATES (projected without heating) ===');
+  const standbyLossPerMin = config.tank.solar ? 0.5 / 60 : 0.4 / 60; // per minute
+  let projectedTemp = tankTemp;
+  let lastMins = nowMins;
+
   for (const goal of config.usage) {
     const [gh, gm] = goal.time.split(':').map(Number);
     const goalMins = gh * 60 + gm;
     if (goalMins <= nowMins) continue;
-    const needed = goal.temp - tankTemp;
+
+    // Apply standby loss from last point to this goal
+    const elapsed = goalMins - lastMins;
+    projectedTemp -= elapsed * standbyLossPerMin;
+
+    const needed = goal.temp - projectedTemp;
     if (needed <= 0) {
-      lines.push(`- ${goal.time} ${goal.label}: tank already at target (${Math.round(tankTemp)}°C >= ${Math.round(goal.temp)}°C)`);
+      lines.push(`- ${goal.time} ${goal.label}: projected ${Math.round(projectedTemp)}°C (target ${Math.round(goal.temp)}°C) — OK`);
     } else {
       const minsNeeded = Math.ceil(needed / rate);
       const startBy = goalMins - minsNeeded;
-      lines.push(`- ${goal.time} ${goal.label}: need +${Math.round(needed)}°C = ~${minsNeeded} minutes heating. Start by ${String(Math.floor(startBy / 60)).padStart(2, '0')}:${String(startBy % 60).padStart(2, '0')}.`);
+      lines.push(`- ${goal.time} ${goal.label}: projected ${Math.round(projectedTemp)}°C (target ${Math.round(goal.temp)}°C) — NEED +${Math.round(needed)}°C = ~${minsNeeded} min heating. Start by ${String(Math.floor(startBy / 60)).padStart(2, '0')}:${String(startBy % 60).padStart(2, '0')}.`);
     }
+
+    // Apply usage drop after this event
+    const drop = usageDrop(config.tank, goal.liters);
+    projectedTemp -= drop;
+    lines.push(`  → after ${goal.liters}L draw: tank drops to ~${Math.round(projectedTemp)}°C`);
+
+    lastMins = goalMins;
   }
 
   // Recent history
@@ -113,8 +129,9 @@ export function buildPrompt(
   lines.push('');
   lines.push('=== YOUR DECISION ===');
   lines.push('Should the boiler turn on NOW? If yes, for how many minutes?');
-  lines.push('Consider: time until next goal, current estimated temp, solar gain remaining today,');
-  lines.push('and whether heating now vs. later is more efficient.');
+  lines.push('Consider: projected tank temperature AT each goal time (not just current temp),');
+  lines.push('the cumulative effect of multiple usage events (each draw cools the tank for the next),');
+  lines.push('time until next goal, solar gain remaining today, and whether heating now vs. later is more efficient.');
   lines.push('');
   lines.push('IMPORTANT: Your response MUST start with a NUMBER followed by a pipe character.');
   lines.push('Examples of correct responses:');
