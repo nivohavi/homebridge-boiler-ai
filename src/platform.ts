@@ -8,6 +8,7 @@ import { fetchWeather, estimateSolarGainPerHour } from './weather';
 import { estimateTankTemp } from './tempModel';
 import { loadState, saveState, appendHistory, BoilerState, RunRecord } from './state';
 import { sendWebhook } from './boiler';
+import { switcherTurnOn, switcherTurnOff } from './switcher';
 import { buildPrompt, parseAIResponse } from './prompt';
 import { BoilerAccessory } from './boilerAccessory';
 
@@ -54,6 +55,11 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
         headers: platformConfig.boilerPlug?.headers,
         body: platformConfig.boilerPlug?.body,
       },
+      switcher: platformConfig.switcher ? {
+        deviceId: platformConfig.switcher.deviceId,
+        deviceIp: platformConfig.switcher.deviceIp,
+        deviceType: platformConfig.switcher.deviceType || 'wasserkraft',
+      } : undefined,
       usage: platformConfig.usage || [
         { time: '06:00', label: 'Morning wash', liters: 30, temp: 38 },
         { time: '18:30', label: 'Kid bath', liters: 50, temp: 45 },
@@ -69,8 +75,9 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     this.api.on('didFinishLaunching', () => {
       this.recoverFromCrash();
       this.startScheduler();
+      const control = this.config.switcher ? `switcher(${this.config.switcher.deviceId})` : 'HTTP webhook';
       this.log.info(
-        `Boiler AI online (location=${this.config.location}, tank=${this.config.tank.liters}L/${this.config.tank.heaterKw}kW, schedule=${JSON.stringify(this.schedule)})`,
+        `Boiler AI online (location=${this.config.location}, tank=${this.config.tank.liters}L/${this.config.tank.heaterKw}kW, control=${control}, schedule=${JSON.stringify(this.schedule)})`,
       );
     });
   }
@@ -92,6 +99,23 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     const acc = new this.api.platformAccessory(this.config.name, uuid);
     this.accessory = new BoilerAccessory(this, acc, this.log);
     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [acc]);
+  }
+
+  // Send on/off command through the configured control method
+  private async sendBoilerOn(minutes?: number): Promise<void> {
+    if (this.config.switcher) {
+      await switcherTurnOn(this.config.switcher, minutes || this.config.maxDurationMinutes, this.log);
+    } else {
+      await sendWebhook(true, this.config.boilerPlug, this.log);
+    }
+  }
+
+  private async sendBoilerOff(): Promise<void> {
+    if (this.config.switcher) {
+      await switcherTurnOff(this.config.switcher, this.log);
+    } else {
+      await sendWebhook(false, this.config.boilerPlug, this.log);
+    }
   }
 
   isBoilerOn(): boolean {
@@ -163,7 +187,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       capped = this.config.maxDurationMinutes;
     }
 
-    await sendWebhook(true, this.config.boilerPlug, this.log);
+    await this.sendBoilerOn(capped);
 
     this.boilerRunning = true;
     const startTime = new Date();
@@ -200,13 +224,13 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     if (!this.boilerRunning) return;
 
     try {
-      await sendWebhook(false, this.config.boilerPlug, this.log);
+      await this.sendBoilerOff();
     } catch (err) {
       this.log.error(`CRITICAL: could not turn boiler OFF: ${(err as Error).message}`);
       // Emergency retry
       setTimeout(async () => {
         try {
-          await sendWebhook(false, this.config.boilerPlug, this.log);
+          await this.sendBoilerOff();
         } catch (e) {
           this.log.error(`EMERGENCY: second OFF attempt failed: ${(e as Error).message}`);
         }
@@ -257,9 +281,9 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
 
     try {
-      await sendWebhook(false, this.config.boilerPlug, this.log);
+      await this.sendBoilerOff();
     } catch (err) {
-      this.log.error(`EMERGENCY STOP: webhook failed: ${(err as Error).message}`);
+      this.log.error(`EMERGENCY STOP: failed: ${(err as Error).message}`);
     }
 
     const state = loadState(this.storagePath);
@@ -275,7 +299,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     const state = loadState(this.storagePath);
     if (state.boilerOn) {
       this.log.warn('RECOVERY: boiler was ON from previous crash — sending OFF');
-      sendWebhook(false, this.config.boilerPlug, this.log).catch(err => {
+      this.sendBoilerOff().catch(err => {
         this.log.error(`RECOVERY: failed to send OFF: ${(err as Error).message}`);
       });
       state.boilerOn = false;

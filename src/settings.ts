@@ -22,6 +22,12 @@ export interface TankConfig {
   solar: boolean;
 }
 
+export interface SwitcherConfig {
+  deviceId: string;
+  deviceIp: string;
+  deviceType?: string;  // default: 'wasserkraft' (boiler)
+}
+
 export interface BoilerAIConfig {
   name: string;
   location: string;
@@ -30,6 +36,7 @@ export interface BoilerAIConfig {
   xaiApiKey?: string;
   tank: TankConfig;
   boilerPlug: BoilerPlugConfig;
+  switcher?: SwitcherConfig;  // if set, uses Switcher instead of boilerPlug
   usage: UsageEntry[];
   maxDurationMinutes: number;
   aiTemperature: number;

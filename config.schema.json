@@ -100,6 +100,29 @@
           }
         }
       },
+      "switcher": {
+        "title": "Switcher (Israeli boiler plug)",
+        "type": "object",
+        "description": "If configured, the plugin controls the boiler via Switcher directly (no HTTP URLs needed). Leave empty to use HTTP smart plug instead.",
+        "properties": {
+          "deviceId": {
+            "title": "Device ID",
+            "type": "string",
+            "description": "Switcher device ID (hex string, e.g. 'aabbcc')"
+          },
+          "deviceIp": {
+            "title": "Device IP",
+            "type": "string",
+            "description": "Switcher device IP address on your local network"
+          },
+          "deviceType": {
+            "title": "Device Type",
+            "type": "string",
+            "default": "wasserkraft",
+            "description": "Usually 'wasserkraft' for boilers"
+          }
+        }
+      },
       "usage": {
         "title": "Hot Water Usage",
         "type": "array",
