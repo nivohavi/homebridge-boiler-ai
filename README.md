@@ -26,7 +26,7 @@ Then configure in the plugin settings (or paste into `config.json`):
     "solar": true
   },
   "switcher": {
-    "deviceId": "Boiler"
+    "deviceId": "Switcher_Touch_386C"
   },
   "usage": [
     { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
@@ -89,7 +89,7 @@ Enter your device name (as it appears in the Switcher app), IP address, or devic
 
 ```json
 "switcher": {
-  "deviceId": "Boiler"
+  "deviceId": "Switcher_Touch_386C"
 }
 ```
 
