@@ -151,7 +151,7 @@ The plugin checks automatically ~1 hour before each event and only heats if need
 
 ### Tank (auto-detected)
 
-On first startup, the plugin asks the AI for the standard tank specs in your location and uses those automatically. If you want to override, add the `tank` section to your config:
+On first startup, the plugin detects the standard tank specs for your location automatically. If your tank is different, override by adding the `tank` section to your config:
 
 ```json
 "tank": {
