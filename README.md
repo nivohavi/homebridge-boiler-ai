@@ -158,9 +158,9 @@ Add the times your household needs hot water:
 
 The plugin checks automatically ~1 hour before each event and only heats if needed. On sunny days, the sun does the work and the electric heater stays off.
 
-### Tank
+### Tank (usually no change needed)
 
-Enter your tank capacity (**liters**) and heater power (**kW**) — found on the tank's nameplate. The heating rate is calculated automatically.
+Defaults are pre-filled for a standard Israeli solar boiler (120L tank, 2.5kW heater). Only change these if your tank is different — check the nameplate if unsure.
 
 ```json
 "tank": {
