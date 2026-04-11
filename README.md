@@ -174,6 +174,8 @@ Set `"solar": false` if your tank is electric-only (no rooftop solar panel).
 
 This runs in the background as long as Homebridge is running — no interaction needed.
 
+**Important:** There is no physical temperature sensor. The tank temperature is estimated based on weather conditions, solar gain, heating history, and standby heat loss. The AI uses this estimate to make decisions. It works well in practice, but it's a model — not a measurement.
+
 ### The HomeKit switch
 
 The boiler appears as a switch in the Home app, but it does **not** enable/disable the system. Think of it as a button:
