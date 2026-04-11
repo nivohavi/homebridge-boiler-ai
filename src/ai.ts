@@ -49,14 +49,17 @@ function callOpenAICompatible(
 function callGeminiREST(
   apiKey: string, model: string, prompt: string, timeoutSecs: number,
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
   });
 
   return httpRequest(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     timeout: timeoutSecs * 1000,
   }, body).then(data => {
     const result = JSON.parse(data);

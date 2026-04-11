@@ -1,6 +1,11 @@
-import { BoilerAIConfig, UsageEntry, heatingRate } from './settings';
+import { BoilerAIConfig, heatingRate } from './settings';
 import { ParsedWeather } from './weather';
 import { BoilerState, lastRun } from './state';
+
+// Sanitize external strings before embedding in AI prompt (#10)
+function sanitize(s: string): string {
+  return s.replace(/[\n\r|]/g, ' ').trim();
+}
 
 export function buildPrompt(
   now: Date, weather: ParsedWeather, tankTemp: number,
@@ -34,7 +39,7 @@ export function buildPrompt(
   // Weather
   lines.push('');
   lines.push('=== WEATHER ===');
-  lines.push(`Condition: ${weather.condition}`);
+  lines.push(`Condition: ${sanitize(weather.condition)}`);
   lines.push(`Temperature: ${Math.round(weather.tempC)}°C`);
   if (config.tank.solar) {
     lines.push(`UV Index: ${weather.uvIndex}`);

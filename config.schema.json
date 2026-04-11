@@ -28,12 +28,14 @@
       "geminiApiKey": {
         "title": "Gemini API Key",
         "type": "string",
-        "description": "Google Gemini API key (free tier available at aistudio.google.com)"
+        "description": "Google Gemini API key (free tier available at aistudio.google.com)",
+        "x-schema-form": { "type": "password" }
       },
       "xaiApiKey": {
         "title": "xAI (Grok) API Key",
         "type": "string",
-        "description": "Optional. If set, Grok is preferred over Gemini"
+        "description": "Optional. If set, Grok is preferred over Gemini",
+        "x-schema-form": { "type": "password" }
       },
       "tank": {
         "title": "Tank",
@@ -118,7 +120,8 @@
           "token": {
             "title": "Token (optional)",
             "type": "string",
-            "description": "Only if needed — get it from https://switcher.co.il/GetKey/"
+            "description": "Only if needed — get it from https://switcher.co.il/GetKey/",
+            "x-schema-form": { "type": "password" }
           }
         }
       },
