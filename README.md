@@ -26,7 +26,7 @@ Then configure in the plugin settings (or paste into `config.json`):
     "solar": true
   },
   "switcher": {
-    "deviceId": "ab1c2d"
+    "deviceId": "Boiler"
   },
   "usage": [
     { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
@@ -83,15 +83,15 @@ Tell the plugin how to turn your boiler on and off. Pick your plug type:
 
 #### Switcher
 
-Native support — just enter your **Device ID** in the Switcher section. The plugin finds and controls it automatically on your network. No URLs needed, no extra plugins.
+Native support — the plugin finds and controls the Switcher directly on your local network. No URLs needed, no extra plugins.
+
+Enter your device name (as it appears in the Switcher app), IP address, or device ID — any of these work:
 
 ```json
 "switcher": {
-  "deviceId": "ab1c2d"
+  "deviceId": "Boiler"
 }
 ```
-
-To find your device ID, check the Switcher app or [homebridge-switcher-platform](https://github.com/nitaybz/homebridge-switcher-platform) logs. It's a short hex string like `ab1c2d`.
 
 If you get auth errors in the logs, your model may need a token — get it from https://switcher.co.il/GetKey/ and add `"token": "your-token"`.
 

@@ -108,7 +108,7 @@
           "deviceId": {
             "title": "Device ID",
             "type": "string",
-            "description": "Switcher device ID (hex string, e.g. 'ab1c2d'). Found in Switcher app or plugin logs."
+            "description": "Device name (as shown in Switcher app), IP address, or hex device ID"
           },
           "deviceIp": {
             "title": "Device IP (optional)",
