@@ -65,9 +65,11 @@ Then configure in the plugin settings (or paste into `config.json`):
 
 ### 1. AI API Key
 
-Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey) — sign in, click "Create API Key", and paste it into the **Gemini API Key** field. The free tier is more than enough (the plugin makes a few calls per day).
+Get an API key from [Google AI Studio](https://aistudio.google.com/apikey) — sign in, click "Create API Key", and paste it into the **Gemini API Key** field.
 
-Alternatively, you can use [xAI Grok](https://console.x.ai/) (paid but faster).
+The plugin uses Gemini Flash-Lite which has a free tier (1,000 requests/day — the plugin uses ~5-10/day). New Google accounts may need to set up billing first, but usage within the free limits is not charged. See [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) for current details.
+
+Alternatively, you can use [xAI Grok](https://console.x.ai/) (paid, but faster responses).
 
 ### 2. Location
 
@@ -195,3 +197,4 @@ The automatic schedule runs regardless. You never need to touch the switch — i
 - **Watchdog timer** — force-stops 5 minutes after max, no matter what
 - **Crash recovery** — sends OFF on Homebridge restart if boiler was left on
 - **Retry logic** — 3 attempts for every on/off command, with emergency double-off on failure
+test
