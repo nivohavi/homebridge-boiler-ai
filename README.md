@@ -73,7 +73,7 @@ Alternatively, you can use [xAI Grok](https://console.x.ai/) (paid but faster).
 
 ### 2. Location
 
-Enter your city name in the **Location** field. To verify it works, run `curl wttr.in/YourCity` — if it shows the right weather, use that name.
+Enter your city name in the **Location** field. To verify it works, open `wttr.in/YourCity` in your browser (e.g. [wttr.in/Tel+Aviv](https://wttr.in/Tel+Aviv)) — if it shows the right weather, use that city name.
 
 Enter your timezone in the **Timezone** field. To find it, run `timedatectl | grep "Time zone"`.
 
