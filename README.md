@@ -176,6 +176,8 @@ This runs in the background as long as Homebridge is running — no interaction 
 
 **Important:** There is no physical temperature sensor. The tank temperature is estimated based on weather conditions, solar gain, heating history, and standby heat loss. The AI uses this estimate to make decisions. It works well in practice, but it's a model — not a measurement.
 
+On the first day after installation, the system has no heating history, so the initial temperature estimate may be off. After the first heating cycle it calibrates itself and becomes more accurate over time.
+
 ### The HomeKit switch
 
 The boiler appears as a switch in the Home app, but it does **not** enable/disable the system. Think of it as a button:
