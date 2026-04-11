@@ -82,21 +82,56 @@ Configure through the Homebridge UI (Settings → Boiler AI) or add to `config.j
 
 ### Smart plug examples
 
-**Shelly:**
+Replace the IP address with your plug's actual IP.
+
+**Shelly (Plus Plug S, Plug S, 1PM, etc.):**
 ```json
-{ "onUrl": "http://shelly-ip/relay/0?turn=on", "offUrl": "http://shelly-ip/relay/0?turn=off" }
+{
+  "onUrl": "http://192.168.1.50/relay/0?turn=on",
+  "offUrl": "http://192.168.1.50/relay/0?turn=off"
+}
+```
+
+**Shelly Gen2+ (Plus/Pro series with switch API):**
+```json
+{
+  "onUrl": "http://192.168.1.50/rpc/Switch.Set?id=0&on=true",
+  "offUrl": "http://192.168.1.50/rpc/Switch.Set?id=0&on=false"
+}
 ```
 
 **Tasmota:**
 ```json
-{ "onUrl": "http://tasmota-ip/cm?cmnd=Power%20On", "offUrl": "http://tasmota-ip/cm?cmnd=Power%20Off" }
+{
+  "onUrl": "http://192.168.1.51/cm?cmnd=Power%20On",
+  "offUrl": "http://192.168.1.51/cm?cmnd=Power%20Off"
+}
 ```
 
-**Any plug with POST + auth** (e.g. behind a gateway):
+**Sonoff eWeLink (via LAN mode):**
 ```json
 {
-  "onUrl": "http://gateway/api/switch/on",
-  "offUrl": "http://gateway/api/switch/off",
+  "onUrl": "http://192.168.1.52:8081/zeroconf/switch",
+  "offUrl": "http://192.168.1.52:8081/zeroconf/switch",
+  "method": "POST",
+  "headers": "{\"Content-Type\": \"application/json\"}",
+  "body": "{\"deviceid\": \"YOUR_DEVICE_ID\", \"data\": {\"switch\": \"on\"}}"
+}
+```
+
+**TP-Link Kasa (via homebridge-http-webhooks bridge):**
+```json
+{
+  "onUrl": "http://localhost:51828/?accessoryId=boiler&state=true",
+  "offUrl": "http://localhost:51828/?accessoryId=boiler&state=false"
+}
+```
+
+**Any plug with POST + auth:**
+```json
+{
+  "onUrl": "http://192.168.1.53/api/switch/on",
+  "offUrl": "http://192.168.1.53/api/switch/off",
   "method": "POST",
   "headers": "{\"Authorization\": \"Bearer YOUR_TOKEN\", \"Content-Type\": \"application/json\"}",
   "body": "{\"device\": \"boiler\"}"
