@@ -127,7 +127,7 @@ describe('buildPrompt', () => {
 
   it('contains HEATING ESTIMATES section', () => {
     const prompt = buildPrompt(new Date('2025-07-15T10:00:00Z'), baseWeather, 40, 3.0, baseState, baseConfig, 'Asia/Jerusalem');
-    expect(prompt).toContain('=== HEATING ESTIMATES ===');
+    expect(prompt).toContain('=== HEATING ESTIMATES (projected without heating) ===');
   });
 
   it('contains YOUR DECISION section', () => {

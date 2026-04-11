@@ -286,7 +286,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       if (this.config.tank.solar) {
         solarGain = estimateSolarGainPerHour(weather, now.getMonth());
       }
-      const tankTemp = estimateTankTemp(this.state, weather, now, this.config.tank, this.config.timezone);
+      const tankTemp = estimateTankTemp(this.state, weather, now, this.config.tank, this.config.timezone, this.config.usage);
 
       // Persist estimate
       this.state.lastEstimatedTemp = tankTemp;
