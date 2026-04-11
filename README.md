@@ -195,3 +195,4 @@ The automatic schedule runs regardless. You never need to touch the switch — i
 - **Watchdog timer** — force-stops 5 minutes after max, no matter what
 - **Crash recovery** — sends OFF on Homebridge restart if boiler was left on
 - **Retry logic** — 3 attempts for every on/off command, with emergency double-off on failure
+test
