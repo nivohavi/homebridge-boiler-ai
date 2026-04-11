@@ -8,7 +8,62 @@ Works with [Switcher](#switcher), [Shelly](#shelly), [Tasmota](#tasmota), and [a
 
 Install the plugin from the Homebridge UI: search for **homebridge-boiler-ai** and click install.
 
-Then configure these 4 things in the plugin settings:
+Then configure in the plugin settings (or paste into `config.json`):
+
+<details>
+<summary><b>Full config example — Switcher</b></summary>
+
+```json
+{
+  "platform": "BoilerAI",
+  "name": "Boiler AI",
+  "location": "Tel Aviv",
+  "timezone": "Asia/Jerusalem",
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",
+  "tank": {
+    "liters": 120,
+    "heaterKw": 2.5,
+    "solar": true
+  },
+  "switcher": {
+    "deviceId": "ab1c2d"
+  },
+  "usage": [
+    { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
+    { "time": "20:00", "label": "Evening shower", "liters": 100, "temp": 50 }
+  ]
+}
+```
+</details>
+
+<details>
+<summary><b>Full config example — Shelly / HTTP plug</b></summary>
+
+```json
+{
+  "platform": "BoilerAI",
+  "name": "Boiler AI",
+  "location": "Tel Aviv",
+  "timezone": "Asia/Jerusalem",
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",
+  "tank": {
+    "liters": 120,
+    "heaterKw": 2.5,
+    "solar": true
+  },
+  "boilerPlug": {
+    "onUrl": "http://192.168.1.50/relay/0?turn=on",
+    "offUrl": "http://192.168.1.50/relay/0?turn=off"
+  },
+  "usage": [
+    { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
+    { "time": "20:00", "label": "Evening shower", "liters": 100, "temp": 50 }
+  ]
+}
+```
+</details>
+
+---
 
 ### 1. AI API Key
 
@@ -28,44 +83,87 @@ Tell the plugin how to turn your boiler on and off. Pick your plug type:
 
 #### Switcher
 
-Native support — just enter your **Device ID** in the Switcher section. The plugin finds and controls it automatically on your network. No URLs, no extra plugins.
+Native support — just enter your **Device ID** in the Switcher section. The plugin finds and controls it automatically on your network. No URLs needed, no extra plugins.
+
+```json
+"switcher": {
+  "deviceId": "ab1c2d"
+}
+```
 
 To find your device ID, check the Switcher app or [homebridge-switcher-platform](https://github.com/nitaybz/homebridge-switcher-platform) logs. It's a short hex string like `ab1c2d`.
 
-If you get auth errors in the logs, your model may need a token — get it from https://switcher.co.il/GetKey/.
+If you get auth errors in the logs, your model may need a token — get it from https://switcher.co.il/GetKey/ and add `"token": "your-token"`.
 
 #### Shelly
 
-Enter in the **Boiler Smart Plug** section:
-- **ON URL:** `http://SHELLY_IP/relay/0?turn=on`
-- **OFF URL:** `http://SHELLY_IP/relay/0?turn=off`
+```json
+"boilerPlug": {
+  "onUrl": "http://192.168.1.50/relay/0?turn=on",
+  "offUrl": "http://192.168.1.50/relay/0?turn=off"
+}
+```
 
-For Gen2+ (Plus/Pro series): use `/rpc/Switch.Set?id=0&on=true` and `&on=false`.
+For Gen2+ (Plus/Pro series):
+```json
+"boilerPlug": {
+  "onUrl": "http://192.168.1.50/rpc/Switch.Set?id=0&on=true",
+  "offUrl": "http://192.168.1.50/rpc/Switch.Set?id=0&on=false"
+}
+```
 
 #### Tasmota
 
-- **ON URL:** `http://TASMOTA_IP/cm?cmnd=Power%20On`
-- **OFF URL:** `http://TASMOTA_IP/cm?cmnd=Power%20Off`
+```json
+"boilerPlug": {
+  "onUrl": "http://192.168.1.51/cm?cmnd=Power%20On",
+  "offUrl": "http://192.168.1.51/cm?cmnd=Power%20Off"
+}
+```
 
 #### Other smart plugs
 
-Any plug with an HTTP on/off URL works. Enter the URLs in the **Boiler Smart Plug** section. For plugs that need POST requests or auth headers, set the **Method**, **Headers**, and **Body** fields.
+Any plug with an HTTP on/off URL works. For plugs that need POST requests or auth headers:
+
+```json
+"boilerPlug": {
+  "onUrl": "http://192.168.1.53/api/switch/on",
+  "offUrl": "http://192.168.1.53/api/switch/off",
+  "method": "POST",
+  "headers": "{\"Authorization\": \"Bearer TOKEN\", \"Content-Type\": \"application/json\"}",
+  "body": "{\"device\": \"boiler\"}"
+}
+```
+
+> **Note:** Use either `switcher` or `boilerPlug` — not both.
 
 ### 4. Hot Water Schedule
 
-Add the times your household needs hot water. For each entry, set:
-- **Time** — when you need it ready (e.g. `07:00`)
-- **Label** — what for (e.g. `Morning shower`)
-- **Liters** — how much (e.g. `60`)
-- **Temperature** — minimum °C needed (e.g. `45`)
+Add the times your household needs hot water:
+
+```json
+"usage": [
+  { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
+  { "time": "18:30", "label": "Kid bath", "liters": 50, "temp": 45 },
+  { "time": "22:00", "label": "Evening shower", "liters": 100, "temp": 50 }
+]
+```
 
 The plugin checks automatically ~1 hour before each event and only heats if needed. On sunny days, the sun does the work and the electric heater stays off.
 
-### Tank specs
+### Tank
 
-Enter your tank capacity (**liters**) and heater power (**kW**) — found on the tank's nameplate. The plugin calculates the heating rate automatically.
+Enter your tank capacity (**liters**) and heater power (**kW**) — found on the tank's nameplate. The heating rate is calculated automatically.
 
-Set **Has Solar Collector** to false if your tank is electric-only (no rooftop solar panel).
+```json
+"tank": {
+  "liters": 120,
+  "heaterKw": 2.5,
+  "solar": true
+}
+```
+
+Set `"solar": false` if your tank is electric-only (no rooftop solar panel).
 
 ## How it works
 
