@@ -2,7 +2,7 @@
 
 AI-powered hot water controller for Homebridge. Once configured, it runs fully autonomously — checking weather, estimating your tank temperature, and turning the boiler on/off as needed. No daily interaction required.
 
-The AI optimizes for minimal electricity by leveraging solar heating on sunny days and only running the electric heater when necessary.
+The AI makes sure you have hot water when you need it — using solar heating when possible and only running the electric heater when necessary.
 
 Works with [Switcher](#switcher), [Shelly](#shelly), [Tasmota](#tasmota), and [any HTTP-controllable plug](#other-smart-plugs).
 
