@@ -22,6 +22,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
   private boilerRunning = false;
   private decisionLock = false;
+  private tankAutoDetected = false;
   private cycleTimer?: NodeJS.Timeout;
   private watchdogTimer?: NodeJS.Timeout;
   private schedulerTimer?: NodeJS.Timeout;
@@ -71,8 +72,15 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
     this.schedule = (platformConfig.schedule as string[]) || deriveSchedule(this.config.usage);
 
-    // Crash recovery
-    this.api.on('didFinishLaunching', () => {
+    // Track if user explicitly configured tank
+    this.tankAutoDetected = !platformConfig.tank?.liters && !platformConfig.tank?.heaterKw;
+
+    this.api.on('didFinishLaunching', async () => {
+      // Auto-detect tank specs from location if not configured
+      if (this.tankAutoDetected) {
+        await this.detectTankSpecs();
+      }
+
       this.recoverFromCrash();
       this.startScheduler();
       const control = this.config.switcher ? `switcher(${this.config.switcher.deviceId})` : 'HTTP webhook';
@@ -99,6 +107,54 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     const acc = new this.api.platformAccessory(this.config.name, uuid);
     this.accessory = new BoilerAccessory(this, acc, this.log);
     this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [acc]);
+  }
+
+  // Auto-detect tank specs based on location using AI
+  private async detectTankSpecs(): Promise<void> {
+    // Check if we already detected and cached specs
+    const state = loadState(this.storagePath);
+    if ((state as any).tankSpecsDetected) {
+      this.config.tank.liters = (state as any).detectedLiters || 120;
+      this.config.tank.heaterKw = (state as any).detectedHeaterKw || 2.5;
+      this.config.tank.solar = (state as any).detectedSolar !== false;
+      this.log.info(`TANK: using detected specs for ${this.config.location}: ${this.config.tank.liters}L, ${this.config.tank.heaterKw}kW, solar=${this.config.tank.solar}`);
+      return;
+    }
+
+    try {
+      this.log.info(`TANK: detecting standard tank specs for ${this.config.location}...`);
+      const prompt = `What is the most common residential hot water tank in ${this.config.location}? Reply with ONLY these 3 values separated by pipes, nothing else:\nLITERS|KW|SOLAR\nwhere LITERS is tank capacity, KW is electric heater power, SOLAR is true or false (whether rooftop solar water heaters are common there).\nExample: 150|3.0|false`;
+
+      const raw = await callAI(prompt, 15, this.config.xaiApiKey, this.config.geminiApiKey, 0.1);
+      const match = raw.trim().match(/(\d+)\s*\|\s*([\d.]+)\s*\|\s*(true|false)/i);
+
+      if (match) {
+        const liters = parseInt(match[1], 10);
+        const kw = parseFloat(match[2]);
+        const solar = match[3].toLowerCase() === 'true';
+
+        // Sanity check
+        if (liters >= 30 && liters <= 500 && kw >= 0.5 && kw <= 10) {
+          this.config.tank.liters = liters;
+          this.config.tank.heaterKw = kw;
+          this.config.tank.solar = solar;
+
+          // Cache so we don't call AI again
+          (state as any).tankSpecsDetected = true;
+          (state as any).detectedLiters = liters;
+          (state as any).detectedHeaterKw = kw;
+          (state as any).detectedSolar = solar;
+          saveState(this.storagePath, state);
+
+          this.log.info(`TANK: detected for ${this.config.location}: ${liters}L, ${kw}kW, solar=${solar}`);
+          return;
+        }
+      }
+
+      this.log.warn(`TANK: could not parse AI response, using defaults (120L, 2.5kW). Response: ${raw.slice(0, 100)}`);
+    } catch (err) {
+      this.log.warn(`TANK: auto-detect failed, using defaults (120L, 2.5kW): ${(err as Error).message}`);
+    }
   }
 
   // Send on/off command through the configured control method

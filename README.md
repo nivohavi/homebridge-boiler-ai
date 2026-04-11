@@ -158,9 +158,9 @@ Add the times your household needs hot water:
 
 The plugin checks automatically ~1 hour before each event and only heats if needed. On sunny days, the sun does the work and the electric heater stays off.
 
-### Tank (usually no change needed)
+### Tank (auto-detected)
 
-Defaults: 120L tank, 2.5kW heater, solar enabled. Change to match your tank — check the nameplate if unsure.
+On first startup, the plugin asks the AI for the standard tank specs in your location and uses those. You can override them manually if your tank is different — check the nameplate if unsure.
 
 ```json
 "tank": {
