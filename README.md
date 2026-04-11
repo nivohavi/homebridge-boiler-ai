@@ -23,10 +23,6 @@ Then configure in the plugin settings (or paste into `config.json`):
   "geminiApiKey": "YOUR_GEMINI_API_KEY",   // get from https://aistudio.google.com/apikey
   "location": "Tel Aviv",                  // your city (verify: wttr.in/YourCity)
   "timezone": "Asia/Jerusalem",            // your timezone
-  "tank": {
-    "liters": 120,                         // your tank capacity
-    "heaterKw": 2.5                        // your heater power (kW)
-  },
   "switcher": {
     "deviceId": "Switcher_Touch_386C"      // name from Switcher app, IP, or hex ID
   },
@@ -35,12 +31,11 @@ Then configure in the plugin settings (or paste into `config.json`):
     { "time": "20:00", "label": "Evening shower", "liters": 100, "temp": 50 }
   ],
 
-  // ── Optional (defaults shown) ─────────────────
+  // ── Optional ──────────────────────────────────
+  // "tank": { "liters": 120, "heaterKw": 2.5 },  // auto-detected from location
   // "xaiApiKey": "",                      // alternative to Gemini
-  // "tank.solar": true,                   // false for electric-only tanks
   // "switcher.token": "",                 // only if you get auth errors
-  // "maxDurationMinutes": 90,             // safety cap per cycle
-  // "aiTemperature": 0.3                  // lower = more conservative
+  // "maxDurationMinutes": 90              // safety cap per cycle
 }
 ```
 
@@ -55,10 +50,6 @@ Then configure in the plugin settings (or paste into `config.json`):
   "geminiApiKey": "YOUR_GEMINI_API_KEY",
   "location": "Tel Aviv",
   "timezone": "Asia/Jerusalem",
-  "tank": {
-    "liters": 120,
-    "heaterKw": 2.5
-  },
   "boilerPlug": {
     "onUrl": "http://192.168.1.50/relay/0?turn=on",
     "offUrl": "http://192.168.1.50/relay/0?turn=off"
@@ -160,7 +151,7 @@ The plugin checks automatically ~1 hour before each event and only heats if need
 
 ### Tank (auto-detected)
 
-On first startup, the plugin asks the AI for the standard tank specs in your location and uses those. You can override them manually if your tank is different — check the nameplate if unsure.
+On first startup, the plugin asks the AI for the standard tank specs in your location and uses those automatically. If you want to override, add the `tank` section to your config:
 
 ```json
 "tank": {
