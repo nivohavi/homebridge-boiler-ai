@@ -10,46 +10,52 @@ Install the plugin from the Homebridge UI: search for **homebridge-boiler-ai** a
 
 Then configure in the plugin settings (or paste into `config.json`):
 
-<details>
-<summary><b>Full config example — Switcher</b></summary>
+**Minimal config — Switcher:**
 
-```json
+```jsonc
 {
   "platform": "BoilerAI",
   "name": "Boiler AI",
-  "location": "Tel Aviv",
-  "timezone": "Asia/Jerusalem",
-  "geminiApiKey": "YOUR_GEMINI_API_KEY",
+
+  // ── Required ──────────────────────────────────
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",   // get from https://aistudio.google.com/apikey
+  "location": "Tel Aviv",                  // your city (verify: wttr.in/YourCity)
+  "timezone": "Asia/Jerusalem",            // your timezone
   "tank": {
-    "liters": 120,
-    "heaterKw": 2.5,
-    "solar": true
+    "liters": 120,                         // your tank capacity
+    "heaterKw": 2.5                        // your heater power (kW)
   },
   "switcher": {
-    "deviceId": "Switcher_Touch_386C"
+    "deviceId": "Switcher_Touch_386C"      // name from Switcher app, IP, or hex ID
   },
   "usage": [
     { "time": "07:00", "label": "Morning shower", "liters": 60, "temp": 45 },
     { "time": "20:00", "label": "Evening shower", "liters": 100, "temp": 50 }
-  ]
+  ],
+
+  // ── Optional (defaults shown) ─────────────────
+  // "xaiApiKey": "",                      // alternative to Gemini
+  // "tank.solar": true,                   // false for electric-only tanks
+  // "switcher.token": "",                 // only if you get auth errors
+  // "maxDurationMinutes": 90,             // safety cap per cycle
+  // "aiTemperature": 0.3                  // lower = more conservative
 }
 ```
-</details>
 
-<details>
-<summary><b>Full config example — Shelly / HTTP plug</b></summary>
+**Minimal config — Shelly / HTTP plug:**
 
-```json
+```jsonc
 {
   "platform": "BoilerAI",
   "name": "Boiler AI",
+
+  // ── Required ──────────────────────────────────
+  "geminiApiKey": "YOUR_GEMINI_API_KEY",
   "location": "Tel Aviv",
   "timezone": "Asia/Jerusalem",
-  "geminiApiKey": "YOUR_GEMINI_API_KEY",
   "tank": {
     "liters": 120,
-    "heaterKw": 2.5,
-    "solar": true
+    "heaterKw": 2.5
   },
   "boilerPlug": {
     "onUrl": "http://192.168.1.50/relay/0?turn=on",
@@ -61,7 +67,6 @@ Then configure in the plugin settings (or paste into `config.json`):
   ]
 }
 ```
-</details>
 
 ---
 
