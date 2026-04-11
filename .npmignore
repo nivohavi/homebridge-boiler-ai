@@ -1,0 +1,5 @@
+src/
+.claude/
+.github/
+tsconfig.json
+conversation-context.md
