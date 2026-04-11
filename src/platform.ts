@@ -6,7 +6,7 @@ import { PLATFORM_NAME, PLUGIN_NAME, BoilerAIConfig, deriveSchedule, heatingRate
 import { callAI } from './ai';
 import { fetchWeather, estimateSolarGainPerHour } from './weather';
 import { estimateTankTemp } from './tempModel';
-import { loadState, saveState, appendHistory } from './state';
+import { loadState, saveState, appendHistory, BoilerState } from './state';
 import { sendWebhook } from './boiler';
 import { switcherTurnOn, switcherTurnOff } from './switcher';
 import { buildPrompt, parseAIResponse } from './prompt';
@@ -20,13 +20,18 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
   private readonly schedule: string[];
   private readonly storagePath: string;
 
+  // In-memory state — single source of truth, avoids load/save race conditions (#12)
+  private state: BoilerState;
+
   private boilerRunning = false;
-  private decisionLock = false;
   private tankAutoDetected = false;
   private cycleTimer?: NodeJS.Timeout;
   private watchdogTimer?: NodeJS.Timeout;
   private schedulerTimer?: NodeJS.Timeout;
   private accessory?: BoilerAccessory;
+
+  // Promise-based decision lock — async-safe (#4)
+  private decisionPromise: Promise<string> | null = null;
 
   constructor(
     public readonly log: Logger,
@@ -37,17 +42,26 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     this.Characteristic = api.hap.Characteristic;
     this.storagePath = api.user.storagePath();
 
+    // Validate location (#11)
+    const location = (platformConfig.location || '').trim();
+    if (!location) {
+      this.log.error('CONFIG: location is required');
+    }
+
+    // Clamp maxDurationMinutes at runtime (#6)
+    const maxDuration = Math.max(10, Math.min(120, platformConfig.maxDurationMinutes || 90));
+
     // Map platform config to typed config
     this.config = {
       name: platformConfig.name || 'Boiler AI',
-      location: platformConfig.location || 'Givatayim',
+      location: location || 'Givatayim',
       timezone: platformConfig.timezone || 'Asia/Jerusalem',
       geminiApiKey: platformConfig.geminiApiKey,
       xaiApiKey: platformConfig.xaiApiKey,
       tank: {
         liters: platformConfig.tank?.liters || 120,
         heaterKw: platformConfig.tank?.heaterKw || 2.5,
-        solar: platformConfig.tank?.solar !== false, // default true
+        solar: platformConfig.tank?.solar !== false,
       },
       boilerPlug: {
         onUrl: platformConfig.boilerPlug?.onUrl || '',
@@ -66,17 +80,30 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
         { time: '18:30', label: 'Kid bath', liters: 50, temp: 45 },
         { time: '22:00', label: 'Showers', liters: 120, temp: 50 },
       ],
-      maxDurationMinutes: platformConfig.maxDurationMinutes || 90,
+      maxDurationMinutes: maxDuration,
       aiTemperature: platformConfig.aiTemperature || 0.3,
     };
 
-    this.schedule = (platformConfig.schedule as string[]) || deriveSchedule(this.config.usage);
+    // Validate webhook URLs (#5)
+    if (!this.config.switcher) {
+      this.validatePlugUrls();
+    }
 
-    // Track if user explicitly configured tank
+    this.schedule = (platformConfig.schedule as string[]) || deriveSchedule(this.config.usage);
     this.tankAutoDetected = !platformConfig.tank?.liters && !platformConfig.tank?.heaterKw;
 
+    // Load state once into memory (#12)
+    this.state = loadState(this.storagePath);
+
     this.api.on('didFinishLaunching', async () => {
-      // Auto-detect tank specs from location if not configured
+      // Startup validation (#14, #15)
+      if (!this.config.geminiApiKey && !this.config.xaiApiKey) {
+        this.log.error('CONFIG: no AI API key set — configure geminiApiKey or xaiApiKey');
+      }
+      if (!this.config.switcher && (!this.config.boilerPlug.onUrl || !this.config.boilerPlug.offUrl)) {
+        this.log.error('CONFIG: no boiler control configured — set switcher.deviceId or both boilerPlug.onUrl and boilerPlug.offUrl');
+      }
+
       if (this.tankAutoDetected) {
         await this.detectTankSpecs();
       }
@@ -88,6 +115,50 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
         `Boiler AI online (location=${this.config.location}, tank=${this.config.tank.liters}L/${this.config.tank.heaterKw}kW, control=${control}, schedule=${JSON.stringify(this.schedule)})`,
       );
     });
+
+    // Shutdown handler — send OFF if boiler is running (#9)
+    this.api.on('shutdown', async () => {
+      this.log.info('SHUTDOWN: cleaning up');
+      if (this.schedulerTimer) clearTimeout(this.schedulerTimer);
+      if (this.cycleTimer) clearTimeout(this.cycleTimer);
+
+      if (this.boilerRunning) {
+        this.log.warn('SHUTDOWN: boiler is running — sending OFF');
+        try {
+          await this.sendBoilerOff();
+          this.boilerRunning = false;
+          this.state.boilerOn = false;
+          this.state.runStartedAt = undefined;
+          this.state.runDurationMin = undefined;
+          this.persistState();
+        } catch (err) {
+          this.log.error(`SHUTDOWN: failed to send OFF: ${(err as Error).message}`);
+          // Leave boilerOn=true so recoverFromCrash picks it up next startup
+        }
+      }
+
+      if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    });
+  }
+
+  // Validate plug URLs have http/https protocol (#5)
+  private validatePlugUrls(): void {
+    for (const [label, url] of [['onUrl', this.config.boilerPlug.onUrl], ['offUrl', this.config.boilerPlug.offUrl]]) {
+      if (!url) continue;
+      try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          this.log.error(`CONFIG: boilerPlug.${label} must use http or https, got: ${parsed.protocol}`);
+        }
+      } catch {
+        this.log.error(`CONFIG: boilerPlug.${label} is not a valid URL: ${url}`);
+      }
+    }
+  }
+
+  // Save in-memory state to disk
+  private persistState(): void {
+    saveState(this.storagePath, this.state);
   }
 
   configureAccessory(accessory: PlatformAccessory): void {
@@ -96,13 +167,11 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
   }
 
   discoverDevices(): void {
-    // Not used — we register in didFinishLaunching via configureAccessory
+    // Not used
   }
 
-  // Called by Homebridge after launch if no cached accessory exists
   private ensureAccessory(): void {
     if (this.accessory) return;
-
     const uuid = this.api.hap.uuid.generate('boiler-ai-switch');
     const acc = new this.api.platformAccessory(this.config.name, uuid);
     this.accessory = new BoilerAccessory(this, acc, this.log);
@@ -111,18 +180,14 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
   // Auto-detect tank specs based on timezone/location
   private async detectTankSpecs(): Promise<void> {
-    // Check if we already detected and cached specs
-    const state = loadState(this.storagePath);
-    if ((state as any).tankSpecsDetected) {
-      this.config.tank.liters = (state as any).detectedLiters || 120;
-      this.config.tank.heaterKw = (state as any).detectedHeaterKw || 2.5;
-      this.config.tank.solar = (state as any).detectedSolar !== false;
+    if ((this.state as any).tankSpecsDetected) {
+      this.config.tank.liters = (this.state as any).detectedLiters || 120;
+      this.config.tank.heaterKw = (this.state as any).detectedHeaterKw || 2.5;
+      this.config.tank.solar = (this.state as any).detectedSolar !== false;
       this.log.info(`TANK: using cached specs: ${this.config.tank.liters}L, ${this.config.tank.heaterKw}kW, solar=${this.config.tank.solar}`);
       return;
     }
 
-    // Regional defaults based on timezone — more reliable than AI for factual specs
-    // See src/regionDefaults.json to add/update regions
     const regionDefaults = require('./regionDefaults.json') as Record<string, { liters: number; kw: number; solar: boolean }>;
     const specs = regionDefaults[this.config.timezone];
 
@@ -132,7 +197,6 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       this.config.tank.solar = specs.solar;
       this.log.info(`TANK: regional defaults for ${this.config.timezone}: ${specs.liters}L, ${specs.kw}kW, solar=${specs.solar}`);
     } else {
-      // Unknown timezone — try AI as fallback
       try {
         this.log.info(`TANK: unknown region (${this.config.timezone}), asking AI...`);
         const prompt = `What is the most common residential hot water tank in the country with timezone ${this.config.timezone}? Reply ONLY: LITERS|KW|SOLAR (e.g. 150|2.5|true). KW must be in kilowatts not watts.`;
@@ -154,12 +218,11 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       }
     }
 
-    // Cache result
-    (state as any).tankSpecsDetected = true;
-    (state as any).detectedLiters = this.config.tank.liters;
-    (state as any).detectedHeaterKw = this.config.tank.heaterKw;
-    (state as any).detectedSolar = this.config.tank.solar;
-    saveState(this.storagePath, state);
+    (this.state as any).tankSpecsDetected = true;
+    (this.state as any).detectedLiters = this.config.tank.liters;
+    (this.state as any).detectedHeaterKw = this.config.tank.heaterKw;
+    (this.state as any).detectedSolar = this.config.tank.solar;
+    this.persistState();
   }
 
   // Send on/off command through the configured control method
@@ -179,34 +242,58 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     }
   }
 
+  // Persistent OFF retry — keeps trying until success (#3)
+  private async sendBoilerOffWithRetries(maxAttempts: number, delayMs: number): Promise<boolean> {
+    for (let i = 1; i <= maxAttempts; i++) {
+      try {
+        await this.sendBoilerOff();
+        return true;
+      } catch (err) {
+        this.log.error(`OFF attempt ${i}/${maxAttempts} failed: ${(err as Error).message}`);
+        if (i < maxAttempts) {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+      }
+    }
+    return false;
+  }
+
   isBoilerOn(): boolean {
     return this.boilerRunning;
   }
 
+  // Promise-based lock — async-safe (#4)
   async triggerDecisionCycle(trigger: string): Promise<string> {
-    if (this.decisionLock) {
+    if (this.decisionPromise) {
       this.log.warn('Decision cycle already in progress');
       return 'busy';
     }
-    this.decisionLock = true;
 
+    this.decisionPromise = this._runDecisionCycle(trigger);
+    try {
+      return await this.decisionPromise;
+    } finally {
+      this.decisionPromise = null;
+    }
+  }
+
+  private async _runDecisionCycle(trigger: string): Promise<string> {
     try {
       const now = new Date();
       const weather = await fetchWeather(this.config.location);
-      const state = loadState(this.storagePath);
 
       let solarGain = 0;
       if (this.config.tank.solar) {
         solarGain = estimateSolarGainPerHour(weather, now.getMonth());
       }
-      const tankTemp = estimateTankTemp(state, weather, now, this.config.tank, this.config.timezone);
+      const tankTemp = estimateTankTemp(this.state, weather, now, this.config.tank, this.config.timezone);
 
       // Persist estimate
-      state.lastEstimatedTemp = tankTemp;
-      state.lastEstimatedAt = now.toISOString();
-      saveState(this.storagePath, state);
+      this.state.lastEstimatedTemp = tankTemp;
+      this.state.lastEstimatedAt = now.toISOString();
+      this.persistState();
 
-      const prompt = buildPrompt(now, weather, tankTemp, solarGain, state, this.config, this.config.timezone);
+      const prompt = buildPrompt(now, weather, tankTemp, solarGain, this.state, this.config, this.config.timezone);
 
       const raw = await callAI(
         prompt, 30,
@@ -214,7 +301,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
         this.config.aiTemperature, this.log,
       );
 
-      this.log.info(`AI RAW RESPONSE: ${raw}`);
+      this.log.debug(`AI RAW RESPONSE: ${raw}`); // #13: debug not info
 
       const { minutes, report } = parseAIResponse(raw, this.config.maxDurationMinutes);
 
@@ -228,8 +315,6 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     } catch (err) {
       this.log.error(`Decision cycle failed: ${(err as Error).message}`);
       return `error: ${(err as Error).message}`;
-    } finally {
-      this.decisionLock = false;
     }
   }
 
@@ -255,11 +340,10 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     this.accessory?.updateState(true);
 
     // Persist ON state
-    const state = loadState(this.storagePath);
-    state.boilerOn = true;
-    state.runStartedAt = startTime.toISOString();
-    state.runDurationMin = capped;
-    saveState(this.storagePath, state);
+    this.state.boilerOn = true;
+    this.state.runStartedAt = startTime.toISOString();
+    this.state.runDurationMin = capped;
+    this.persistState();
 
     this.log.info(`BOILER ON: ${capped} min cycle (trigger: ${trigger})`);
 
@@ -284,30 +368,38 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
   ): Promise<void> {
     if (!this.boilerRunning) return;
 
-    try {
-      await this.sendBoilerOff();
-    } catch (err) {
-      this.log.error(`CRITICAL: could not turn boiler OFF: ${(err as Error).message}`);
-      // Emergency retry
-      setTimeout(async () => {
-        try {
-          await this.sendBoilerOff();
-        } catch (e) {
-          this.log.error(`EMERGENCY: second OFF attempt failed: ${(e as Error).message}`);
-        }
-      }, 30000);
-    }
+    // Persistent retry — don't give up easily (#3)
+    const offSuccess = await this.sendBoilerOffWithRetries(5, 10000);
 
     this.boilerRunning = false;
     this.accessory?.updateState(false);
-    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
 
-    const state = loadState(this.storagePath);
-    state.boilerOn = false;
-    state.runStartedAt = undefined;
-    state.runDurationMin = undefined;
+    if (!offSuccess) {
+      this.log.error('CRITICAL: all OFF attempts failed — boiler may still be physically ON');
+      // Don't clear watchdog — let it try stopBoiler as last resort
+      // Also schedule aggressive retries
+      let extraAttempts = 0;
+      const retryInterval = setInterval(async () => {
+        extraAttempts++;
+        try {
+          await this.sendBoilerOff();
+          this.log.warn(`RECOVERY: OFF succeeded on extra attempt ${extraAttempts}`);
+          clearInterval(retryInterval);
+        } catch {
+          this.log.error(`RECOVERY: extra OFF attempt ${extraAttempts} failed`);
+          if (extraAttempts >= 10) clearInterval(retryInterval);
+        }
+      }, 60000);
+    } else {
+      if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    }
 
-    appendHistory(state, {
+    // Update state
+    this.state.boilerOn = !offSuccess; // Only mark off if OFF succeeded
+    this.state.runStartedAt = undefined;
+    this.state.runDurationMin = undefined;
+
+    appendHistory(this.state, {
       startedAt: startTime.toISOString(),
       finishedAt: new Date().toISOString(),
       durationMins: minutes,
@@ -321,52 +413,49 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
     // Update temp estimate with heating gain
     const rate = heatingRate(this.config.tank);
-    if (state.lastEstimatedTemp > 0) {
-      state.lastEstimatedTemp += minutes * rate;
+    if (this.state.lastEstimatedTemp > 0) {
+      this.state.lastEstimatedTemp += minutes * rate;
     } else {
       const month = startTime.getMonth() + 1;
       const baseTemp = (month >= 5 && month <= 9) ? 25 : 20;
-      state.lastEstimatedTemp = baseTemp + minutes * rate;
+      this.state.lastEstimatedTemp = baseTemp + minutes * rate;
     }
-    if (state.lastEstimatedTemp > 70) state.lastEstimatedTemp = 70;
-    state.lastEstimatedAt = new Date().toISOString();
+    if (this.state.lastEstimatedTemp > 70) this.state.lastEstimatedTemp = 70;
+    this.state.lastEstimatedAt = new Date().toISOString();
 
-    saveState(this.storagePath, state);
+    this.persistState();
     this.log.info(`BOILER OFF: finished ${minutes} min cycle (trigger: ${trigger})`);
   }
 
   async stopBoiler(): Promise<void> {
+    if (this.cycleTimer) clearTimeout(this.cycleTimer);
+
+    const offSuccess = await this.sendBoilerOffWithRetries(3, 5000);
+
     this.boilerRunning = false;
     this.accessory?.updateState(false);
-    if (this.cycleTimer) clearTimeout(this.cycleTimer);
     if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
 
-    try {
-      await this.sendBoilerOff();
-    } catch (err) {
-      this.log.error(`EMERGENCY STOP: failed: ${(err as Error).message}`);
-    }
+    this.state.boilerOn = !offSuccess;
+    this.state.runStartedAt = undefined;
+    this.state.runDurationMin = undefined;
+    this.persistState();
 
-    const state = loadState(this.storagePath);
-    state.boilerOn = false;
-    state.runStartedAt = undefined;
-    state.runDurationMin = undefined;
-    saveState(this.storagePath, state);
-
-    this.log.info('EMERGENCY STOP: boiler forced OFF');
+    this.log.info(`EMERGENCY STOP: boiler forced OFF ${offSuccess ? '(confirmed)' : '(WARNING: OFF command failed)'}`);
   }
 
   private recoverFromCrash(): void {
-    const state = loadState(this.storagePath);
-    if (state.boilerOn) {
+    if (this.state.boilerOn) {
       this.log.warn('RECOVERY: boiler was ON from previous crash — sending OFF');
-      this.sendBoilerOff().catch(err => {
-        this.log.error(`RECOVERY: failed to send OFF: ${(err as Error).message}`);
+      this.sendBoilerOffWithRetries(5, 5000).then(success => {
+        if (!success) {
+          this.log.error('RECOVERY: all OFF attempts failed — boiler may still be ON');
+        }
+        this.state.boilerOn = !success;
+        this.state.runStartedAt = undefined;
+        this.state.runDurationMin = undefined;
+        this.persistState();
       });
-      state.boilerOn = false;
-      state.runStartedAt = undefined;
-      state.runDurationMin = undefined;
-      saveState(this.storagePath, state);
     }
     this.ensureAccessory();
   }
@@ -396,7 +485,6 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     }
 
     if (!nextTime) {
-      // All checks passed — next is first check tomorrow
       const firstMins = parseTimeOfDay(this.schedule[0]);
       sleepMs = ((24 * 60 - nowMins) + firstMins) * 60 * 1000;
       nextTime = this.schedule[0] + ' (tomorrow)';
