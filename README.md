@@ -160,7 +160,7 @@ The plugin checks automatically ~1 hour before each event and only heats if need
 
 ### Tank (usually no change needed)
 
-Defaults are pre-filled for a standard Israeli solar boiler (120L tank, 2.5kW heater). Only change these if your tank is different — check the nameplate if unsure.
+Defaults are pre-filled (120L tank, 2.5kW heater). Only change these if your tank is different — check the nameplate if unsure.
 
 ```json
 "tank": {
