@@ -197,3 +197,28 @@ The automatic schedule runs regardless. You never need to touch the switch — i
 - **Watchdog timer** — force-stops 5 minutes after max, no matter what
 - **Crash recovery** — sends OFF on Homebridge restart if boiler was left on
 - **Retry logic** — 3 attempts for every on/off command, with emergency double-off on failure
+- **AI retry** — retries on transient API errors (503, 429, network) up to 2 times with 30s delay
+
+## How the AI decides
+
+The plugin builds a detailed prompt for each decision including:
+
+- Current weather, UV index, and solar gain estimate
+- Estimated tank temperature (based on heating history, solar, and standby loss)
+- **Cascading usage projections** — projects what the tank temperature will be at each upcoming usage time, accounting for standby heat loss AND the temperature drop from each prior hot water draw
+- Heating estimates showing exactly how many minutes are needed and by when
+
+This means the AI sees the full picture — if you have showers at 22:00 and 23:00, it knows the first shower will cool the tank for the second one and heats accordingly.
+
+After each scheduled usage time passes, the plugin conservatively assumes the water was used and lowers the temperature estimate. This prevents the "tank already hot" mistake when water was actually drawn.
+
+## Docker / Node.js 24
+
+If you run Homebridge in Docker with Node.js 24+, the Switcher integration requires the OpenSSL legacy provider. Add this to your `docker-compose.yml`:
+
+```yaml
+environment:
+  - NODE_OPTIONS=--openssl-legacy-provider
+```
+
+This is needed because the `switcher-js2` library uses a cipher that changed behavior in Node.js 24. HTTP-based plugs (Shelly, Tasmota) are not affected.

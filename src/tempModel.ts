@@ -1,5 +1,5 @@
 import { ParsedWeather, estimateSolarGainPerHour, isDaylight } from './weather';
-import { TankConfig, heatingRate } from './settings';
+import { TankConfig, UsageEntry, heatingRate, usageDrop } from './settings';
 import { BoilerState, lastRun } from './state';
 
 function getTimezoneDate(tz: string): Date {
@@ -46,9 +46,46 @@ export function clampTemp(temp: number, ambientTempC: number): number {
   return temp;
 }
 
+/**
+ * Apply assumed usage drops for scheduled events that have passed since last estimate.
+ * Conservative approach: assume every scheduled usage actually happened.
+ */
+export function applyAssumedUsage(
+  temp: number, tank: TankConfig, usage: UsageEntry[],
+  lastEstimateMs: number, nowMs: number, tz: string,
+): number {
+  let result = temp;
+
+  for (const u of usage) {
+    const [h, m] = u.time.split(':').map(Number);
+    const usageMins = h * 60 + m;
+
+    // Check each day between lastEstimate and now
+    const startDay = new Date(lastEstimateMs);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(nowMs);
+    endDay.setHours(23, 59, 59, 999);
+
+    for (let d = startDay.getTime(); d <= endDay.getTime(); d += 24 * 3600 * 1000) {
+      const eventDate = new Date(d);
+      // Get the local time for this day in the configured timezone
+      const localStr = eventDate.toLocaleDateString('en-US', { timeZone: tz });
+      const eventMs = new Date(`${localStr} ${u.time}:00`).getTime();
+
+      // Only apply if the event falls between last estimate and now
+      if (eventMs > lastEstimateMs && eventMs <= nowMs) {
+        const drop = usageDrop(tank, u.liters);
+        result -= drop;
+      }
+    }
+  }
+
+  return result;
+}
+
 export function estimateTankTemp(
   state: BoilerState, weather: ParsedWeather,
-  now: Date, tank: TankConfig, tz: string,
+  now: Date, tank: TankConfig, tz: string, usage: UsageEntry[] = [],
 ): number {
   const nowMs = now.getTime();
   const rate = heatingRate(tank);
@@ -68,11 +105,13 @@ export function estimateTankTemp(
         temp += last.durationMins * rate;
         if (temp > 70) temp = 70;
         temp = simulateWindow(temp, weather, finishMs, nowMs, tank.solar, tz);
+        temp = applyAssumedUsage(temp, tank, usage, estimateMs, nowMs, tz);
         return clampTemp(temp, weather.tempC);
       }
 
       // No boiler run since last estimate
-      const temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, nowMs, tank.solar, tz);
+      let temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, nowMs, tank.solar, tz);
+      temp = applyAssumedUsage(temp, tank, usage, estimateMs, nowMs, tz);
       return clampTemp(temp, weather.tempC);
     }
   }
