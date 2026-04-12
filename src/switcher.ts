@@ -33,9 +33,30 @@ async function resolveDevice(config: SwitcherConfig, log: Logger): Promise<clien
   return device;
 }
 
+/**
+ * Fresh discovery to get current device state (bypasses cache).
+ */
+async function checkDeviceState(config: SwitcherConfig, log: Logger): Promise<client.DiscoveredDevice> {
+  log.debug('SWITCHER: checking device state...');
+  const device = await client.discover(config.deviceId, 10000);
+  if (config.deviceIp) {
+    device.ip = config.deviceIp;
+  }
+  // Update cache with fresh data
+  cachedDevice = device;
+  cacheTimestamp = Date.now();
+  return device;
+}
+
 export async function switcherTurnOn(config: SwitcherConfig, minutes: number, log: Logger): Promise<void> {
   try {
-    const device = await resolveDevice(config, log);
+    // Fresh state check — skip if already on (manual intervention)
+    const device = await checkDeviceState(config, log);
+    if (device.state === 'on') {
+      log.info(`SWITCHER: device is already ON — skipping (manual or external control detected)`);
+      return;
+    }
+
     await client.switcherTurnOn(device.deviceId, device.ip, device.deviceKey, minutes);
     log.info(`SWITCHER: turned ON for ${minutes} min`);
   } catch (err) {
