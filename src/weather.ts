@@ -18,7 +18,16 @@ const sunTable: [string, string][] = [
   ['06:30', '18:00'], ['06:00', '16:40'], ['06:30', '16:40'],
 ];
 
+export interface HourlyEntry {
+  hour: number;      // 0-23
+  uvIndex: number;
+  tempC: number;
+  condition: string;
+}
+
 let weatherCache: ParsedWeather | null = null;
+let hourlyCache: HourlyEntry[] | null = null;
+let hourlyCacheDate = '';  // YYYY-MM-DD
 
 export async function fetchWeather(location: string): Promise<ParsedWeather> {
   try {
@@ -51,6 +60,64 @@ export async function fetchWeather(location: string): Promise<ParsedWeather> {
       sunrise: sunTable[m][0], sunset: sunTable[m][1],
     };
   }
+}
+
+export async function fetchHourlyWeather(location: string): Promise<HourlyEntry[]> {
+  // Return cache if same day
+  const today = new Date().toISOString().slice(0, 10);
+  if (hourlyCache && hourlyCacheDate === today) {
+    return hourlyCache;
+  }
+
+  try {
+    const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
+    const data = await httpRequest(url, { method: 'GET', timeout: 15000 });
+    const json = JSON.parse(data);
+    const hours = json?.weather?.[0]?.hourly;
+    if (!Array.isArray(hours)) return hourlyCache || [];
+
+    const entries: HourlyEntry[] = hours.map((h: any) => ({
+      hour: Math.floor(parseInt(h.time || '0', 10) / 100),
+      uvIndex: parseInt(h.uvIndex || '0', 10),
+      tempC: parseInt(h.tempC || '20', 10),
+      condition: h.weatherDesc?.[0]?.value || 'Unknown',
+    }));
+
+    hourlyCache = entries;
+    hourlyCacheDate = today;
+    return entries;
+  } catch {
+    return hourlyCache || [];
+  }
+}
+
+/**
+ * Get UV index for a specific hour from hourly data.
+ * Interpolates between the 3-hourly data points wttr.in provides.
+ */
+export function getHourlyUV(hourly: HourlyEntry[], hour: number): number | null {
+  if (!hourly.length) return null;
+
+  // Find the closest entry
+  let best = hourly[0];
+  for (const e of hourly) {
+    if (Math.abs(e.hour - hour) < Math.abs(best.hour - hour)) {
+      best = e;
+    }
+  }
+  return best.uvIndex;
+}
+
+export function getHourlyCondition(hourly: HourlyEntry[], hour: number): string | null {
+  if (!hourly.length) return null;
+
+  let best = hourly[0];
+  for (const e of hourly) {
+    if (Math.abs(e.hour - hour) < Math.abs(best.hour - hour)) {
+      best = e;
+    }
+  }
+  return best.condition;
 }
 
 function parseWeatherString(raw: string): ParsedWeather {

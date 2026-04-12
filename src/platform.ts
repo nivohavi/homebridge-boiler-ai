@@ -4,7 +4,7 @@ import {
 } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME, BoilerAIConfig, deriveSchedule, heatingRate, parseTimeOfDay } from './settings';
 import { callAI } from './ai';
-import { fetchWeather, estimateSolarGainPerHour } from './weather';
+import { fetchWeather, fetchHourlyWeather, estimateSolarGainPerHour } from './weather';
 import { estimateTankTemp } from './tempModel';
 import { loadState, saveState, appendHistory, BoilerState } from './state';
 import { sendWebhook } from './boiler';
@@ -281,12 +281,15 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
     try {
       const now = new Date();
       const weather = await fetchWeather(this.config.location);
+      const hourly = this.config.tank.solar
+        ? await fetchHourlyWeather(this.config.location)
+        : [];
 
       let solarGain = 0;
       if (this.config.tank.solar) {
         solarGain = estimateSolarGainPerHour(weather, now.getMonth());
       }
-      const tankTemp = estimateTankTemp(this.state, weather, now, this.config.tank, this.config.timezone, this.config.usage);
+      const tankTemp = estimateTankTemp(this.state, weather, now, this.config.tank, this.config.timezone, this.config.usage, hourly);
 
       // Persist estimate
       this.state.lastEstimatedTemp = tankTemp;

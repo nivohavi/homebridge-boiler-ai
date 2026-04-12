@@ -1,6 +1,6 @@
 {
   "name": "homebridge-boiler-ai",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "AI-powered solar hot water tank controller for Homebridge",
   "main": "dist/index.js",
   "scripts": {
