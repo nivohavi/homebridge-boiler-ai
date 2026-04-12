@@ -109,57 +109,76 @@ function buildControlPacket(
     ts +
     '00000000000000000000f0fe' +
     deviceId +
+    '00' +
     '0'.repeat(72) +
     '0106000' + command + '00' + timer;
   return packet;
 }
 
-// --- TCP communication ---
+// --- TCP session ---
 
-function sendPacket(ip: string, hexPacket: string, timeoutMs = 10000): Promise<Buffer> {
+function preparePacket(hexPacket: string): Buffer {
+  return Buffer.from(signPacket(setMessageLength(hexPacket)), 'hex');
+}
+
+function extractSessionId(response: Buffer): string {
+  return response.toString('hex').slice(16, 24);
+}
+
+/**
+ * Open a TCP connection, login, send a command, and close.
+ * Keeps the connection open between login and command so the session is valid.
+ */
+function loginAndSend(
+  ip: string, loginPacket: string, commandPacket: (sessionId: string) => string,
+  timeoutMs = 10000,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const packet = setMessageLength(hexPacket);
-    const signed = signPacket(packet);
-    const data = Buffer.from(signed, 'hex');
-
     const socket = new net.Socket();
-    let responded = false;
+    let phase: 'login' | 'command' | 'done' = 'login';
+    let settled = false;
 
     const timer = setTimeout(() => {
-      if (!responded) {
-        responded = true;
+      if (!settled) {
+        settled = true;
         socket.destroy();
-        reject(new Error('Switcher TCP timeout'));
+        reject(new Error(`Switcher TCP timeout (phase: ${phase})`));
       }
     }, timeoutMs);
 
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      err ? reject(err) : resolve();
+    };
+
     socket.connect(TCP_PORT, ip, () => {
-      socket.write(data);
+      socket.write(preparePacket(loginPacket));
     });
 
-    socket.on('data', (response) => {
-      if (!responded) {
-        responded = true;
-        clearTimeout(timer);
-        socket.destroy();
-        resolve(response);
+    socket.on('data', (data) => {
+      if (settled) return;
+
+      if (phase === 'login') {
+        const sessionId = extractSessionId(data);
+        phase = 'command';
+        socket.write(preparePacket(commandPacket(sessionId)));
+      } else if (phase === 'command') {
+        phase = 'done';
+        if (data.length > 0) {
+          finish();
+        } else {
+          finish(new Error('Switcher: empty command response'));
+        }
       }
     });
 
     socket.on('error', (err) => {
-      if (!responded) {
-        responded = true;
-        clearTimeout(timer);
-        socket.destroy();
-        reject(new Error(`Switcher TCP error: ${err.message}`));
-      }
+      finish(new Error(`Switcher TCP error: ${err.message}`));
     });
   });
-}
-
-function extractSessionId(response: Buffer): string {
-  const hex = response.toString('hex');
-  return hex.slice(16, 24);
 }
 
 // --- Discovery ---
@@ -213,14 +232,13 @@ export function discover(
         const nullIdx = nameBytes.indexOf(0);
         const name = nameBytes.slice(0, nullIdx >= 0 ? nullIdx : nameBytes.length).toString('utf-8');
 
-        // IP: little-endian at hex offset 152-160
+        // IP: 4 bytes at hex offset 152-160, each byte is one octet
         const ipHex = hex.slice(152, 160);
-        const ipNum = parseInt(ipHex.slice(6, 8) + ipHex.slice(4, 6) + ipHex.slice(2, 4) + ipHex.slice(0, 2), 16);
         const ip = [
-          (ipNum >>> 24) & 0xFF,
-          (ipNum >>> 16) & 0xFF,
-          (ipNum >>> 8) & 0xFF,
-          ipNum & 0xFF,
+          parseInt(ipHex.slice(0, 2), 16),
+          parseInt(ipHex.slice(2, 4), 16),
+          parseInt(ipHex.slice(4, 6), 16),
+          parseInt(ipHex.slice(6, 8), 16),
         ].join('.');
 
         // State at hex offset 266-268
@@ -251,31 +269,19 @@ export function discover(
 export async function switcherTurnOn(
   deviceId: string, ip: string, deviceKey: string, minutes: number,
 ): Promise<void> {
-  // Login
-  const loginPacket = buildLoginPacket(deviceKey);
-  const loginResponse = await sendPacket(ip, loginPacket);
-  const sessionId = extractSessionId(loginResponse);
-
-  // Send ON command
-  const controlPacket = buildControlPacket(sessionId, deviceId, '1', minutes);
-  const response = await sendPacket(ip, controlPacket);
-  if (!response || response.length === 0) {
-    throw new Error('Switcher turn_on: empty response');
-  }
+  await loginAndSend(
+    ip,
+    buildLoginPacket(deviceKey),
+    (sessionId) => buildControlPacket(sessionId, deviceId, '1', minutes),
+  );
 }
 
 export async function switcherTurnOff(
   deviceId: string, ip: string, deviceKey: string,
 ): Promise<void> {
-  // Login
-  const loginPacket = buildLoginPacket(deviceKey);
-  const loginResponse = await sendPacket(ip, loginPacket);
-  const sessionId = extractSessionId(loginResponse);
-
-  // Send OFF command
-  const controlPacket = buildControlPacket(sessionId, deviceId, '0', 0);
-  const response = await sendPacket(ip, controlPacket);
-  if (!response || response.length === 0) {
-    throw new Error('Switcher turn_off: empty response');
-  }
+  await loginAndSend(
+    ip,
+    buildLoginPacket(deviceKey),
+    (sessionId) => buildControlPacket(sessionId, deviceId, '0', 0),
+  );
 }
