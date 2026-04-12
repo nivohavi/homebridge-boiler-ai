@@ -1,4 +1,4 @@
-import { ParsedWeather, estimateSolarGainPerHour, isDaylight } from './weather';
+import { ParsedWeather, HourlyEntry, estimateSolarGainPerHour, isDaylight, cloudFactor, seasonalMultiplier, getHourlyUV, getHourlyCondition } from './weather';
 import { TankConfig, UsageEntry, heatingRate, usageDrop } from './settings';
 import { BoilerState, lastRun } from './state';
 
@@ -10,6 +10,7 @@ function getTimezoneDate(tz: string): Date {
 export function simulateWindow(
   startTemp: number, weather: ParsedWeather,
   fromMs: number, toMs: number, solar: boolean, tz: string,
+  hourly: HourlyEntry[] = [],
 ): number {
   let temp = startTemp;
   const hoursSince = (toMs - fromMs) / (3600 * 1000);
@@ -29,7 +30,15 @@ export function simulateWindow(
         temp -= 0.3; // day loss
       }
       if (isDaylight(minuteOfDay, weather)) {
-        temp += estimateSolarGainPerHour(weather, checkDate.getMonth()) / 2.0;
+        // Use hourly UV/condition if available, otherwise fall back to current weather
+        const hourUV = getHourlyUV(hourly, hour);
+        const hourCond = getHourlyCondition(hourly, hour);
+        if (hourUV !== null && hourCond !== null) {
+          const gain = hourUV * 1.5 * cloudFactor(hourCond) * seasonalMultiplier(checkDate.getMonth());
+          temp += gain / 2.0;
+        } else {
+          temp += estimateSolarGainPerHour(weather, checkDate.getMonth()) / 2.0;
+        }
       }
     } else {
       temp -= 0.4; // electric-only: consistent loss
@@ -86,6 +95,7 @@ export function applyAssumedUsage(
 export function estimateTankTemp(
   state: BoilerState, weather: ParsedWeather,
   now: Date, tank: TankConfig, tz: string, usage: UsageEntry[] = [],
+  hourly: HourlyEntry[] = [],
 ): number {
   const nowMs = now.getTime();
   const rate = heatingRate(tank);
@@ -101,16 +111,16 @@ export function estimateTankTemp(
         // Boiler ran after last estimate
         const startMs = new Date(last.startedAt).getTime();
         const finishMs = new Date(last.finishedAt).getTime();
-        let temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, startMs, tank.solar, tz);
+        let temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, startMs, tank.solar, tz, hourly);
         temp += last.durationMins * rate;
         if (temp > 70) temp = 70;
-        temp = simulateWindow(temp, weather, finishMs, nowMs, tank.solar, tz);
+        temp = simulateWindow(temp, weather, finishMs, nowMs, tank.solar, tz, hourly);
         temp = applyAssumedUsage(temp, tank, usage, estimateMs, nowMs, tz);
         return clampTemp(temp, weather.tempC);
       }
 
       // No boiler run since last estimate
-      let temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, nowMs, tank.solar, tz);
+      let temp = simulateWindow(state.lastEstimatedTemp, weather, estimateMs, nowMs, tank.solar, tz, hourly);
       temp = applyAssumedUsage(temp, tank, usage, estimateMs, nowMs, tz);
       return clampTemp(temp, weather.tempC);
     }
@@ -132,6 +142,6 @@ export function estimateTankTemp(
   if (postHeatTemp > 70) postHeatTemp = 70;
 
   const finishMs = new Date(last.finishedAt).getTime();
-  const temp = simulateWindow(postHeatTemp, weather, finishMs, nowMs, tank.solar, tz);
+  const temp = simulateWindow(postHeatTemp, weather, finishMs, nowMs, tank.solar, tz, hourly);
   return clampTemp(temp, weather.tempC);
 }
