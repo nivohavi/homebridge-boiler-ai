@@ -57,19 +57,17 @@ export function clampTemp(temp: number, ambientTempC: number): number {
 
 /**
  * Apply assumed usage drops for scheduled events that have passed since last estimate.
- * Conservative approach: assume every scheduled usage actually happened.
+ * Conservative approach: assume every scheduled usage happened, but cap total drops
+ * to prevent unrealistically low estimates.
+ * Max total drop = 50% of the difference between current temp and ambient (floor 15°C).
  */
 export function applyAssumedUsage(
   temp: number, tank: TankConfig, usage: UsageEntry[],
   lastEstimateMs: number, nowMs: number, tz: string,
 ): number {
-  let result = temp;
+  let totalDrop = 0;
 
   for (const u of usage) {
-    const [h, m] = u.time.split(':').map(Number);
-    const usageMins = h * 60 + m;
-
-    // Check each day between lastEstimate and now
     const startDay = new Date(lastEstimateMs);
     startDay.setHours(0, 0, 0, 0);
     const endDay = new Date(nowMs);
@@ -77,19 +75,20 @@ export function applyAssumedUsage(
 
     for (let d = startDay.getTime(); d <= endDay.getTime(); d += 24 * 3600 * 1000) {
       const eventDate = new Date(d);
-      // Get the local time for this day in the configured timezone
       const localStr = eventDate.toLocaleDateString('en-US', { timeZone: tz });
       const eventMs = new Date(`${localStr} ${u.time}:00`).getTime();
 
-      // Only apply if the event falls between last estimate and now
       if (eventMs > lastEstimateMs && eventMs <= nowMs) {
-        const drop = usageDrop(tank, u.liters);
-        result -= drop;
+        totalDrop += usageDrop(tank, u.liters);
       }
     }
   }
 
-  return result;
+  // Cap: usage drops can't push temp below 50% of the way to ambient
+  const maxDrop = (temp - 15) * 0.5;
+  const cappedDrop = Math.min(totalDrop, Math.max(0, maxDrop));
+
+  return temp - cappedDrop;
 }
 
 export function estimateTankTemp(

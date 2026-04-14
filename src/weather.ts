@@ -25,70 +25,96 @@ export interface HourlyEntry {
   condition: string;
 }
 
-let weatherCache: ParsedWeather | null = null;
+let weatherCache: { data: ParsedWeather; timestamp: number } | null = null;
 let hourlyCache: HourlyEntry[] | null = null;
 let hourlyCacheDate = '';  // YYYY-MM-DD
 
+const WEATHER_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes max cache age
+const WEATHER_RETRY_COUNT = 3;
+const WEATHER_RETRY_DELAY_MS = 5000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function fetchWeather(location: string): Promise<ParsedWeather> {
-  try {
-    const url = `https://wttr.in/${encodeURIComponent(location)}?format=%C+%t+%p+%u\\n%S\\n%s`;
-    const data = await httpRequest(url, { method: 'GET', timeout: 10000 });
-    const lines = data.trim().split('\n');
-    const raw = lines[0].trim();
-    const parsed = parseWeatherString(raw);
-
-    if (lines.length >= 3) {
-      parsed.sunrise = lines[1].trim().slice(0, 5); // HH:MM from HH:MM:SS
-      parsed.sunset = lines[2].trim().slice(0, 5);
-    }
-    if (!parsed.sunrise || !parsed.sunset) {
-      const m = new Date().getMonth();
-      parsed.sunrise = sunTable[m][0];
-      parsed.sunset = sunTable[m][1];
-    }
-
-    weatherCache = parsed;
-    return parsed;
-  } catch {
-    if (weatherCache) {
-      return { ...weatherCache, raw: weatherCache.raw + ' (cached)' };
-    }
-    const m = new Date().getMonth();
-    return {
-      raw: 'Unknown', condition: 'Unknown',
-      tempC: 20, precipMM: 0, uvIndex: 3,
-      sunrise: sunTable[m][0], sunset: sunTable[m][1],
-    };
+  // Return fresh cache (< 30 min old)
+  if (weatherCache && (Date.now() - weatherCache.timestamp) < WEATHER_CACHE_TTL_MS) {
+    return weatherCache.data;
   }
+
+  // Retry up to 3 times — no stale cache fallback
+  let lastErr: Error | undefined;
+  for (let attempt = 1; attempt <= WEATHER_RETRY_COUNT; attempt++) {
+    try {
+      const url = `https://wttr.in/${encodeURIComponent(location)}?format=%C+%t+%p+%u\\n%S\\n%s`;
+      const data = await httpRequest(url, { method: 'GET', timeout: 10000 });
+      const lines = data.trim().split('\n');
+      const raw = lines[0].trim();
+      const parsed = parseWeatherString(raw);
+
+      if (lines.length >= 3) {
+        parsed.sunrise = lines[1].trim().slice(0, 5);
+        parsed.sunset = lines[2].trim().slice(0, 5);
+      }
+      if (!parsed.sunrise || !parsed.sunset) {
+        const m = new Date().getMonth();
+        parsed.sunrise = sunTable[m][0];
+        parsed.sunset = sunTable[m][1];
+      }
+
+      weatherCache = { data: parsed, timestamp: Date.now() };
+      return parsed;
+    } catch (err) {
+      lastErr = err as Error;
+      if (attempt < WEATHER_RETRY_COUNT) {
+        await sleep(WEATHER_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  // All retries failed — throw, don't use stale data
+  throw new Error(`Weather fetch failed after ${WEATHER_RETRY_COUNT} attempts: ${lastErr?.message}`);
 }
 
 export async function fetchHourlyWeather(location: string): Promise<HourlyEntry[]> {
-  // Return cache if same day
+  // Return cache only if same day
   const today = new Date().toISOString().slice(0, 10);
   if (hourlyCache && hourlyCacheDate === today) {
     return hourlyCache;
   }
 
-  try {
-    const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
-    const data = await httpRequest(url, { method: 'GET', timeout: 15000 });
-    const json = JSON.parse(data);
-    const hours = json?.weather?.[0]?.hourly;
-    if (!Array.isArray(hours)) return hourlyCache || [];
+  // Invalidate stale cache from previous day
+  hourlyCache = null;
+  hourlyCacheDate = '';
 
-    const entries: HourlyEntry[] = hours.map((h: any) => ({
-      hour: Math.floor(parseInt(h.time || '0', 10) / 100),
-      uvIndex: parseInt(h.uvIndex || '0', 10),
-      tempC: parseInt(h.tempC || '20', 10),
-      condition: h.weatherDesc?.[0]?.value || 'Unknown',
-    }));
+  for (let attempt = 1; attempt <= WEATHER_RETRY_COUNT; attempt++) {
+    try {
+      const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
+      const data = await httpRequest(url, { method: 'GET', timeout: 15000 });
+      const json = JSON.parse(data);
+      const hours = json?.weather?.[0]?.hourly;
+      if (!Array.isArray(hours)) throw new Error('No hourly data in response');
 
-    hourlyCache = entries;
-    hourlyCacheDate = today;
-    return entries;
-  } catch {
-    return hourlyCache || [];
+      const entries: HourlyEntry[] = hours.map((h: any) => ({
+        hour: Math.floor(parseInt(h.time || '0', 10) / 100),
+        uvIndex: parseInt(h.uvIndex || '0', 10),
+        tempC: parseInt(h.tempC || '20', 10),
+        condition: h.weatherDesc?.[0]?.value || 'Unknown',
+      }));
+
+      hourlyCache = entries;
+      hourlyCacheDate = today;
+      return entries;
+    } catch {
+      if (attempt < WEATHER_RETRY_COUNT) {
+        await sleep(WEATHER_RETRY_DELAY_MS);
+      }
+    }
   }
+
+  // Hourly is best-effort — return empty if all retries fail (current weather still used as fallback in simulateWindow)
+  return [];
 }
 
 /**
