@@ -58,6 +58,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       timezone: platformConfig.timezone || 'Asia/Jerusalem',
       geminiApiKey: platformConfig.geminiApiKey,
       xaiApiKey: platformConfig.xaiApiKey,
+      weatherApiKey: platformConfig.weatherApiKey,
       tank: {
         liters: platformConfig.tank?.liters || 120,
         heaterKw: platformConfig.tank?.heaterKw || 2.5,
@@ -280,9 +281,12 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
   private async _runDecisionCycle(trigger: string): Promise<string> {
     try {
       const now = new Date();
-      const weather = await fetchWeather(this.config.location);
+      const { merged: weather, sourceDetails } = await fetchWeather(this.config.location, this.config.weatherApiKey);
+      for (const detail of sourceDetails) {
+        this.log.info(`WEATHER: ${detail}`);
+      }
       const hourly = this.config.tank.solar
-        ? await fetchHourlyWeather(this.config.location)
+        ? await fetchHourlyWeather(this.config.location, this.config.weatherApiKey)
         : [];
 
       let solarGain = 0;
@@ -501,7 +505,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       });
       this.log.info('SCHEDULER: running automatic check');
       const report = await this.triggerDecisionCycle(trigger);
-      this.log.info(`SCHEDULER: completed — ${report.slice(0, 100)}${report.length > 100 ? '...' : ''}`);
+      this.log.info(`SCHEDULER: completed — ${report}`);
       this.scheduleNext();
     }, sleepMs);
   }
