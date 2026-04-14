@@ -31,75 +31,82 @@ let hourlyCacheDate = '';  // YYYY-MM-DD
 
 const WEATHER_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes max cache age
 
-export async function fetchWeather(location: string): Promise<ParsedWeather> {
+export interface WeatherResult {
+  merged: ParsedWeather;
+  sourceDetails: string[];  // per-source summary for logging
+}
+
+export async function fetchWeather(location: string, weatherApiKey?: string): Promise<WeatherResult> {
   // Return fresh cache (< 30 min old)
   if (weatherCache && (Date.now() - weatherCache.timestamp) < WEATHER_CACHE_TTL_MS) {
-    return weatherCache.data;
+    return { merged: weatherCache.data, sourceDetails: ['(cached)'] };
   }
 
   // Fetch from all sources in parallel
+  const sourceNames = ['Open-Meteo', 'MET Norway', 'CurrentUVIndex', ...(weatherApiKey ? ['WeatherAPI'] : [])];
   const results = await Promise.allSettled([
-    fetchWeatherWttrIn(location),
     fetchWeatherOpenMeteo(location),
     fetchWeatherMetNorway(location),
     fetchWeatherCurrentUV(location),
+    ...(weatherApiKey ? [fetchWeatherAPI(location, weatherApiKey)] : []),
   ]);
 
   const sources: ParsedWeather[] = [];
-  const sourceNames = ['wttr.in', 'Open-Meteo', 'MET Norway', 'CurrentUVIndex'];
-  for (const r of results) {
-    if (r.status === 'fulfilled') sources.push(r.value);
+  const sourceDetails: string[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      sources.push(r.value);
+      const s = r.value;
+      const parts: string[] = [];
+      if (s.tempC > -900) parts.push(`${s.tempC}°C`);
+      if (s.uvIndex >= 0) parts.push(`UV:${s.uvIndex}`);
+      if (s.condition) parts.push(s.condition);
+      sourceDetails.push(`${sourceNames[i]}: ${parts.join(' ')}`);
+    } else {
+      sourceDetails.push(`${sourceNames[i]}: FAILED (${(r.reason as Error).message})`);
+    }
   }
 
   if (sources.length === 0) {
-    const errors = results.map((r, i) =>
-      r.status === 'rejected' ? `${sourceNames[i]}: ${(r.reason as Error).message}` : '',
-    ).filter(Boolean).join(' | ');
-    throw new Error(`All weather sources failed: ${errors}`);
+    throw new Error(`All weather sources failed: ${sourceDetails.join(' | ')}`);
   }
 
-  // Merge: average numeric values, exclude sentinels (UV=-1: no UV, temp=-999: no temp, precip=-1: no precip)
-  const uvSources = sources.filter(s => s.uvIndex >= 0);
-  const tempSources = sources.filter(s => s.tempC > -900);
-  const precipSources = sources.filter(s => s.precipMM >= 0);
+  // Cross-validate: discard sources whose temp deviates >5°C from the median of others
+  const validSources = crossValidate(sources);
+  if (validSources.length < sources.length) {
+    const discarded = sources.length - validSources.length;
+    sourceDetails.push(`(${discarded} source(s) discarded by cross-validation)`);
+  }
+
+  // Merge: average numeric values, exclude sentinels
+  const uvValues: ParsedWeather[] = validSources.filter(s => s.uvIndex >= 0);
+  const tempValues: ParsedWeather[] = validSources.filter(s => s.tempC > -900);
+  const precipValues: ParsedWeather[] = validSources.filter(s => s.precipMM >= 0);
   const merged: ParsedWeather = {
-    raw: sources.map(s => s.raw).join(' + '),
-    condition: sources.find(s => s.condition)?.condition || 'Unknown',
-    tempC: tempSources.length > 0
-      ? Math.round(tempSources.reduce((s, w) => s + w.tempC, 0) / tempSources.length)
+    raw: validSources.map(s => s.raw).join(' + '),
+    condition: validSources.find(s => s.condition)?.condition || 'Unknown',
+    tempC: tempValues.length > 0
+      ? Math.round(tempValues.reduce((s, w) => s + w.tempC, 0) / tempValues.length)
       : 20,
-    precipMM: precipSources.length > 0
-      ? +(precipSources.reduce((s, w) => s + w.precipMM, 0) / precipSources.length).toFixed(1)
+    precipMM: precipValues.length > 0
+      ? +(precipValues.reduce((s, w) => s + w.precipMM, 0) / precipValues.length).toFixed(1)
       : 0,
-    uvIndex: uvSources.length > 0
-      ? Math.round(uvSources.reduce((s, w) => s + w.uvIndex, 0) / uvSources.length)
+    uvIndex: uvValues.length > 0
+      ? Math.round(uvValues.reduce((s, w) => s + w.uvIndex, 0) / uvValues.length)
       : 0,
-    sunrise: sources.find(s => s.sunrise)?.sunrise || sunTable[new Date().getMonth()][0],
-    sunset: sources.find(s => s.sunset)?.sunset || sunTable[new Date().getMonth()][1],
+    sunrise: validSources.find(s => s.sunrise)?.sunrise || sunTable[new Date().getMonth()][0],
+    sunset: validSources.find(s => s.sunset)?.sunset || sunTable[new Date().getMonth()][1],
   };
 
+  sourceDetails.push(`→ MERGED: ${merged.tempC}°C UV:${merged.uvIndex} ${merged.condition}`);
+
   weatherCache = { data: merged, timestamp: Date.now() };
-  return merged;
+  return { merged, sourceDetails };
 }
 
-async function fetchWeatherWttrIn(location: string): Promise<ParsedWeather> {
-  const url = `https://wttr.in/${encodeURIComponent(location)}?format=%C+%t+%p+%u\\n%S\\n%s`;
-  const data = await httpRequest(url, { method: 'GET', timeout: 10000 });
-  const lines = data.trim().split('\n');
-  const parsed = parseWeatherString(lines[0].trim());
-  if (lines.length >= 3) {
-    parsed.sunrise = lines[1].trim().slice(0, 5);
-    parsed.sunset = lines[2].trim().slice(0, 5);
-  }
-  if (!parsed.sunrise || !parsed.sunset) {
-    const m = new Date().getMonth();
-    parsed.sunrise = sunTable[m][0];
-    parsed.sunset = sunTable[m][1];
-  }
-  return parsed;
-}
-
-export async function fetchHourlyWeather(location: string): Promise<HourlyEntry[]> {
+export async function fetchHourlyWeather(location: string, weatherApiKey?: string): Promise<HourlyEntry[]> {
   // Return cache only if same day
   const today = new Date().toISOString().slice(0, 10);
   if (hourlyCache && hourlyCacheDate === today) {
@@ -110,12 +117,12 @@ export async function fetchHourlyWeather(location: string): Promise<HourlyEntry[
   hourlyCache = null;
   hourlyCacheDate = '';
 
-  // Fetch from all sources in parallel
+  // Fetch from all sources in parallel (no wttr.in — unreliable)
   const results = await Promise.allSettled([
-    fetchHourlyWttrIn(location),
     fetchHourlyOpenMeteo(location),
     fetchHourlyMetNorway(location),
     fetchHourlyCurrentUV(location),
+    ...(weatherApiKey ? [fetchHourlyWeatherAPI(location, weatherApiKey)] : []),
   ]);
 
   const allEntries: HourlyEntry[][] = [];
@@ -132,18 +139,29 @@ export async function fetchHourlyWeather(location: string): Promise<HourlyEntry[
   return merged;
 }
 
-async function fetchHourlyWttrIn(location: string): Promise<HourlyEntry[]> {
-  const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;
-  const data = await httpRequest(url, { method: 'GET', timeout: 15000 });
-  const json = JSON.parse(data);
-  const hours = json?.weather?.[0]?.hourly;
-  if (!Array.isArray(hours)) throw new Error('No hourly data');
-  return hours.map((h: any) => ({
-    hour: Math.floor(parseInt(h.time || '0', 10) / 100),
-    uvIndex: parseInt(h.uvIndex || '0', 10),
-    tempC: parseInt(h.tempC || '20', 10),
-    condition: h.weatherDesc?.[0]?.value || 'Unknown',
-  }));
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Cross-validate sources: if a source's temp deviates >5°C from the median
+ * of the other sources, discard it (it's lying).
+ * Only applies when we have 3+ temp sources to compare.
+ */
+function crossValidate(sources: ParsedWeather[]): ParsedWeather[] {
+  const tempSources = sources.filter(s => s.tempC > -900);
+  if (tempSources.length < 3) return sources; // not enough to cross-validate
+
+  const temps = tempSources.map(s => s.tempC);
+  const med = median(temps);
+
+  return sources.filter(s => {
+    if (s.tempC <= -900) return true; // no temp from this source, keep it (has UV or other data)
+    const deviation = Math.abs(s.tempC - med);
+    return deviation <= 5; // discard if >5°C from median
+  });
 }
 
 function mergeHourlyEntries(allEntries: HourlyEntry[][]): HourlyEntry[] {
@@ -373,9 +391,55 @@ async function fetchHourlyCurrentUV(location: string): Promise<HourlyEntry[]> {
   return entries;
 }
 
+// --- WeatherAPI.com (free key, full weather + UV + hourly) ---
+
+async function fetchWeatherAPI(location: string, apiKey: string): Promise<ParsedWeather> {
+  const { lat, lon } = await geocode(location);
+  const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${lat},${lon}&days=1&aqi=no`;
+  const data = await httpRequest(url, { method: 'GET', timeout: 10000 });
+  const json = JSON.parse(data);
+  if (json.error) throw new Error(`WeatherAPI: ${json.error.message}`);
+  const c = json.current || {};
+  const astro = json.forecast?.forecastday?.[0]?.astro || {};
+  return {
+    raw: `${c.condition?.text || 'Unknown'} +${c.temp_c}°C UV:${c.uv} (weatherapi)`,
+    condition: c.condition?.text || 'Unknown',
+    tempC: Math.round(c.temp_c || 20),
+    precipMM: c.precip_mm || 0,
+    uvIndex: Math.round(c.uv || 0),
+    sunrise: astro.sunrise ? parse12hTo24h(astro.sunrise) : '',
+    sunset: astro.sunset ? parse12hTo24h(astro.sunset) : '',
+  };
+}
+
+async function fetchHourlyWeatherAPI(location: string, apiKey: string): Promise<HourlyEntry[]> {
+  const { lat, lon } = await geocode(location);
+  const url = `https://api.weatherapi.com/v1/forecast.json?key=${apiKey}&q=${lat},${lon}&days=1&aqi=no`;
+  const data = await httpRequest(url, { method: 'GET', timeout: 10000 });
+  const json = JSON.parse(data);
+  if (json.error) throw new Error(`WeatherAPI: ${json.error.message}`);
+  const hours = json.forecast?.forecastday?.[0]?.hour || [];
+  return hours.filter((_: any, i: number) => i % 3 === 0).map((h: any) => ({
+    hour: parseInt((h.time || '').slice(11, 13), 10),
+    uvIndex: Math.round(h.uv || 0),
+    tempC: Math.round(h.temp_c || 20),
+    condition: h.condition?.text || 'Unknown',
+  }));
+}
+
+function parse12hTo24h(timeStr: string): string {
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return timeStr.trim().slice(0, 5);
+  let h = parseInt(match[1], 10);
+  const m = match[2];
+  const ampm = match[3].toUpperCase();
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${m}`;
+}
+
 /**
  * Get UV index for a specific hour from hourly data.
- * Interpolates between the 3-hourly data points wttr.in provides.
  */
 export function getHourlyUV(hourly: HourlyEntry[], hour: number): number | null {
   if (!hourly.length) return null;
@@ -400,49 +464,6 @@ export function getHourlyCondition(hourly: HourlyEntry[], hour: number): string 
     }
   }
   return best.condition;
-}
-
-function parseWeatherString(raw: string): ParsedWeather {
-  const p: ParsedWeather = {
-    raw, condition: '', tempC: 0, precipMM: 0, uvIndex: 0,
-    sunrise: '', sunset: '',
-  };
-
-  const parts = raw.split(/\s+/);
-  let tempIdx = -1;
-
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i].includes('°')) {
-      tempIdx = i;
-      const temp = parts[i].replace('°C', '').replace('°F', '').replace('+', '');
-      const v = parseFloat(temp);
-      if (!isNaN(v)) p.tempC = v;
-      break;
-    }
-  }
-
-  if (tempIdx > 0) {
-    p.condition = parts.slice(0, tempIdx).join(' ');
-  } else if (parts.length > 0) {
-    p.condition = parts[0];
-  }
-
-  for (const part of parts) {
-    if (part.endsWith('mm')) {
-      const v = parseFloat(part.replace('mm', ''));
-      if (!isNaN(v)) p.precipMM = v;
-    }
-  }
-
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const v = parseInt(parts[i], 10);
-    if (!isNaN(v) && v >= 0 && v <= 15 && parts[i] === String(v)) {
-      p.uvIndex = v;
-      break;
-    }
-  }
-
-  return p;
 }
 
 export function cloudFactor(condition: string): number {

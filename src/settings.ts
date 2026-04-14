@@ -34,6 +34,7 @@ export interface BoilerAIConfig {
   timezone: string;
   geminiApiKey?: string;
   xaiApiKey?: string;
+  weatherApiKey?: string;
   tank: TankConfig;
   boilerPlug: BoilerPlugConfig;
   switcher?: SwitcherConfig;  // if set, uses Switcher instead of boilerPlug
