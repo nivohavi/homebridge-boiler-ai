@@ -102,7 +102,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       if (!this.config.geminiApiKey && !this.config.xaiApiKey) {
         this.log.error('CONFIG: no AI API key set — configure geminiApiKey or xaiApiKey');
       }
-      if (!this.config.switcher && (!this.config.boilerPlug.onUrl || !this.config.boilerPlug.offUrl)) {
+      if (!this.config.dryRun && !this.config.switcher && (!this.config.boilerPlug.onUrl || !this.config.boilerPlug.offUrl)) {
         this.log.error('CONFIG: no boiler control configured — set switcher.deviceId or both boilerPlug.onUrl and boilerPlug.offUrl');
       }
 
