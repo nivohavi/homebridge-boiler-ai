@@ -83,6 +83,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       ],
       maxDurationMinutes: maxDuration,
       aiTemperature: platformConfig.aiTemperature || 0.3,
+      dryRun: platformConfig.dryRun === true,
     };
 
     // Validate webhook URLs (#5)
@@ -101,7 +102,7 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
       if (!this.config.geminiApiKey && !this.config.xaiApiKey) {
         this.log.error('CONFIG: no AI API key set — configure geminiApiKey or xaiApiKey');
       }
-      if (!this.config.switcher && (!this.config.boilerPlug.onUrl || !this.config.boilerPlug.offUrl)) {
+      if (!this.config.dryRun && !this.config.switcher && (!this.config.boilerPlug.onUrl || !this.config.boilerPlug.offUrl)) {
         this.log.error('CONFIG: no boiler control configured — set switcher.deviceId or both boilerPlug.onUrl and boilerPlug.offUrl');
       }
 
@@ -111,7 +112,8 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
       this.recoverFromCrash();
       this.startScheduler();
-      const control = this.config.switcher ? `switcher(${this.config.switcher.deviceId})` : 'HTTP webhook';
+      const control = this.config.dryRun ? 'DRY RUN'
+        : this.config.switcher ? `switcher(${this.config.switcher.deviceId})` : 'HTTP webhook';
       this.log.info(
         `Boiler AI online (location=${this.config.location}, tank=${this.config.tank.liters}L/${this.config.tank.heaterKw}kW, control=${control}, schedule=${JSON.stringify(this.schedule)})`,
       );
@@ -314,8 +316,10 @@ export class BoilerAIPlatform implements DynamicPlatformPlugin {
 
       this.log.info(`DECISION: ${minutes} mins | tank ~${Math.round(tankTemp)}°C | ${weather.raw} | trigger: ${trigger}`);
 
-      if (minutes > 0) {
+      if (minutes > 0 && !this.config.dryRun) {
         await this.startBoilerCycle(minutes, trigger, weather, report);
+      } else if (minutes > 0 && this.config.dryRun) {
+        this.log.info(`[DRY RUN] Would heat for ${minutes} min — ${report}`);
       }
 
       return report;

@@ -41,6 +41,7 @@ export interface BoilerAIConfig {
   usage: UsageEntry[];
   maxDurationMinutes: number;
   aiTemperature: number;
+  dryRun: boolean;
 }
 
 export function heatingRate(tank: TankConfig): number {

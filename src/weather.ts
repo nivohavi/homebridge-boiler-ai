@@ -52,33 +52,29 @@ export async function fetchWeather(location: string, weatherApiKey?: string): Pr
   ]);
 
   const sources: ParsedWeather[] = [];
-  const sourceDetails: string[] = [];
+  const sourceNames2: string[] = [];
+  const rowData: Array<{ name: string; src: ParsedWeather | null; failed?: string }> = [];
 
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     if (r.status === 'fulfilled') {
       sources.push(r.value);
-      const s = r.value;
-      const parts: string[] = [];
-      if (s.tempC > -900) parts.push(`${s.tempC}°C`);
-      if (s.uvIndex >= 0) parts.push(`UV:${s.uvIndex}`);
-      if (s.condition) parts.push(s.condition);
-      sourceDetails.push(`${sourceNames[i]}: ${parts.join(' ')}`);
+      sourceNames2.push(sourceNames[i]);
+      rowData.push({ name: sourceNames[i], src: r.value });
     } else {
-      sourceDetails.push(`${sourceNames[i]}: FAILED (${(r.reason as Error).message})`);
+      rowData.push({ name: sourceNames[i], src: null, failed: (r.reason as Error).message });
     }
   }
 
   if (sources.length === 0) {
-    throw new Error(`All weather sources failed: ${sourceDetails.join(' | ')}`);
+    throw new Error(`All weather sources failed: ${rowData.map(r => `${r.name}: ${r.failed}`).join(' | ')}`);
   }
 
   // Cross-validate: discard sources whose temp deviates >5°C from the median of others
   const validSources = crossValidate(sources);
-  if (validSources.length < sources.length) {
-    const discarded = sources.length - validSources.length;
-    sourceDetails.push(`(${discarded} source(s) discarded by cross-validation)`);
-  }
+  const discardedByTemp = new Set<string>(
+    sources.filter(s => !validSources.includes(s)).map(s => sourceNames2[sources.indexOf(s)]),
+  );
 
   // Merge: average numeric values, exclude sentinels
   const uvValues: ParsedWeather[] = validSources.filter(s => s.uvIndex >= 0);
@@ -100,10 +96,32 @@ export async function fetchWeather(location: string, weatherApiKey?: string): Pr
     sunset: validSources.find(s => s.sunset)?.sunset || sunTable[new Date().getMonth()][1],
   };
 
-  sourceDetails.push(`→ MERGED: ${merged.tempC}°C UV:${merged.uvIndex} ${merged.condition}`);
+  // Build structured table for logging (fixed-width columns)
+  const sourceDetails: string[] = [];
+  for (const row of rowData) {
+    if (!row.src) {
+      sourceDetails.push(fmtRow(row.name, '-', '-', `FAILED: ${row.failed || ''}`));
+      continue;
+    }
+    const s = row.src;
+    const flag = discardedByTemp.has(row.name) ? ' [!temp]' : '';
+    sourceDetails.push(fmtRow(
+      row.name,
+      s.tempC > -900 ? `${s.tempC}C` : '-',
+      s.uvIndex >= 0 ? `${s.uvIndex}` : '-',
+      s.condition || '-',
+      flag,
+    ));
+  }
+  sourceDetails.push('------------------------------------------');
+  sourceDetails.push(fmtRow('-> MERGED', `${merged.tempC}C`, `${merged.uvIndex}`, merged.condition));
 
   weatherCache = { data: merged, timestamp: Date.now() };
   return { merged, sourceDetails };
+}
+
+function fmtRow(name: string, temp: string, uv: string, cond: string, flag = ''): string {
+  return `${name.padEnd(14)} | ${temp.padStart(5)} | UV:${uv.padStart(2)} | ${cond}${flag}`;
 }
 
 export async function fetchHourlyWeather(location: string, weatherApiKey?: string): Promise<HourlyEntry[]> {
